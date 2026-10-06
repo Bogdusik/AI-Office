@@ -28,3 +28,9 @@ export const TASK_STAGE: Record<TaskStage, string> = {
   draft: "Черновик",
   self_check: "Самопроверка",
 };
+
+export const RUN_STATUS: Record<string, string> = {
+  running: "Идёт",
+  succeeded: "Успешно",
+  failed: "Ошибка",
+};
