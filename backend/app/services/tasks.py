@@ -5,6 +5,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.events import publish_task
 from app.models import Task, TaskComment
 from app.models.enums import CommentAuthor, TaskStatus
 from app.schemas.task import TaskCreate
@@ -67,6 +68,7 @@ async def create_task(session: AsyncSession, data: TaskCreate) -> Task:
     session.add(task)
     await session.commit()
     await session.refresh(task)
+    publish_task(task)
     return task
 
 
@@ -86,6 +88,7 @@ async def _transition(
     if comment is not None:
         session.add(TaskComment(task_id=task.id, author=CommentAuthor.DIRECTOR, body=comment))
     await session.commit()
+    publish_task(task)
     return await get_task_detail(session, task.id)
 
 
@@ -113,6 +116,7 @@ async def resume(session: AsyncSession, task_id: int) -> Task:
     task.position = rules.front_position(queued.all(), task.position)
     apply_transition(task, TaskStatus.QUEUED, datetime.now(UTC))
     await session.commit()
+    publish_task(task)
     return await get_task_detail(session, task.id)
 
 

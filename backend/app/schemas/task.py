@@ -51,6 +51,7 @@ class RunRead(ORMModel):
     status: RunStatus
     error: str | None
     output: str
+    sources: list[str]
     started_at: datetime
     finished_at: datetime | None
 

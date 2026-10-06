@@ -10,6 +10,12 @@ class Settings(BaseSettings):
     test_database_url: str | None = None
     cors_origins: list[str] = ["http://localhost:3000"]
 
+    executor_enabled: bool = True
+    executor_arrive_seconds: float = 5.0
+    executor_stage_seconds: float = 5.0
+    executor_depart_seconds: float = 5.0
+    executor_tick_seconds: float = 1.0
+
 
 @lru_cache
 def get_settings() -> Settings:
