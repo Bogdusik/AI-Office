@@ -5,6 +5,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.events import publish_task
 from app.models import Task, TaskComment
 from app.models.enums import CommentAuthor, TaskStatus
 from app.schemas.task import TaskCreate
@@ -12,7 +13,7 @@ from app.services import rules
 from app.services.agents import ensure_active, get_agent
 from app.services.errors import ConflictError, NotFoundError
 
-RESUMABLE = frozenset({TaskStatus.PAUSED, TaskStatus.CHANGES_REQUESTED})
+STARTABLE = frozenset({TaskStatus.QUEUED, TaskStatus.CHANGES_REQUESTED})
 
 
 async def list_tasks(
@@ -67,6 +68,7 @@ async def create_task(session: AsyncSession, data: TaskCreate) -> Task:
     session.add(task)
     await session.commit()
     await session.refresh(task)
+    publish_task(task)
     return task
 
 
@@ -86,6 +88,7 @@ async def _transition(
     if comment is not None:
         session.add(TaskComment(task_id=task.id, author=CommentAuthor.DIRECTOR, body=comment))
     await session.commit()
+    publish_task(task)
     return await get_task_detail(session, task.id)
 
 
@@ -103,10 +106,18 @@ async def pause(session: AsyncSession, task_id: int) -> Task:
 
 
 async def resume(session: AsyncSession, task_id: int) -> Task:
-    task = await get_task(session, task_id)
-    if task.status not in RESUMABLE:
+    """A paused task goes back to the front of its agent's queue and later continues from its next stage."""
+    task = await get_task(session, task_id, lock=True)
+    if task.status != TaskStatus.PAUSED:
         raise ConflictError(f"Cannot resume a task in status '{task.status}'")
-    return await _transition(session, task_id, TaskStatus.IN_PROGRESS)
+    queued = await session.scalars(
+        select(Task.position).where(Task.agent_id == task.agent_id, Task.status == TaskStatus.QUEUED)
+    )
+    task.position = rules.front_position(queued.all(), task.position)
+    apply_transition(task, TaskStatus.QUEUED, datetime.now(UTC))
+    await session.commit()
+    publish_task(task)
+    return await get_task_detail(session, task.id)
 
 
 async def cancel(session: AsyncSession, task_id: int) -> Task:
@@ -115,7 +126,7 @@ async def cancel(session: AsyncSession, task_id: int) -> Task:
 
 async def start(session: AsyncSession, task_id: int) -> Task:
     task = await get_task(session, task_id)
-    if task.status != TaskStatus.QUEUED:
+    if task.status not in STARTABLE:
         raise rules.TransitionError(task.status, TaskStatus.IN_PROGRESS)
     return await _transition(session, task_id, TaskStatus.IN_PROGRESS)
 

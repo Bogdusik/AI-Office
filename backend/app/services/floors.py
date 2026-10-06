@@ -96,6 +96,7 @@ async def update_floor(session: AsyncSession, floor_id: int, data: FloorUpdate) 
 
 async def delete_floor(session: AsyncSession, floor_id: int) -> None:
     floor = await get_floor(session, floor_id, lock=True)
+    rules.ensure_floor_deletable(floor.kind, floor.has_director_office)
     rules.ensure_floor_empty(await count_active_agents(session, floor.id))
     await session.delete(floor)
     await session.commit()

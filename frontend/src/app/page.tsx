@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 import { WorldError } from "@/components/hud/Controls";
+import { EventSync } from "@/components/hud/EventSync";
 import { Hotkeys } from "@/components/hud/Hotkeys";
 import { Hud } from "@/components/hud/Hud";
 import { WorldSync } from "@/components/hud/WorldSync";
@@ -13,6 +14,7 @@ export default function Home() {
       <Suspense fallback={null}>
         <WorldSync />
       </Suspense>
+      <EventSync />
       <Hotkeys />
       <SceneLoader />
       <Hud />

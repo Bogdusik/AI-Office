@@ -2,7 +2,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.models.enums import CommentAuthor, Provider, RunStatus, TaskStage, TaskStatus
+from app.models.enums import CommentAuthor, RunProvider, RunStatus, TaskStage, TaskStatus
 from app.schemas.common import NonEmptyStr, ORMModel
 
 
@@ -43,12 +43,15 @@ class CommentRead(ORMModel):
 class RunRead(ORMModel):
     id: int
     stage: TaskStage
-    provider: Provider
+    attempt: int
+    provider: RunProvider
     model: str | None
     input_tokens: int
     output_tokens: int
     status: RunStatus
     error: str | None
+    output: str
+    sources: list[str]
     started_at: datetime
     finished_at: datetime | None
 
