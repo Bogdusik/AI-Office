@@ -6,7 +6,7 @@ const status = (s: string) => TASK_STATUS[s as TaskStatus]?.label ?? s;
 /** Backend messages (409/422/404) → what the director should read. Order matters: first match wins. */
 const MESSAGES: [RegExp, (...m: string[]) => string][] = [
   [/^Cannot move task from '(\w+)' to '(\w+)'/, (a, b) => `Нельзя перевести задачу из «${status(a)}» в «${status(b)}». Статус мог измениться — данные обновлены.`],
-  [/^Cannot resume a task in status '(\w+)'/, (a) => `Продолжить можно только задачу на паузе или на доработке, а эта сейчас «${status(a)}».`],
+  [/^Cannot resume a task in status '(\w+)'/, (a) => `Продолжить можно только задачу на паузе, а эта сейчас «${status(a)}».`],
   [/^A director comment is required/, () => "Чтобы вернуть задачу, напишите комментарий: что исправить."],
   [/^Floor is full \((\d+)\/(\d+)\)/, (a, b) => `Этаж заполнен: заняты все ${b} мест.`],
   [/^Role key '(.+)' is already used/, (k) => `role_key «${k}» уже занят другим сотрудником.`],
@@ -15,6 +15,8 @@ const MESSAGES: [RegExp, (...m: string[]) => string][] = [
   [/^Desk (\d+) on floor (\d+) is taken/, (d, f) => `Место ${Number(d) + 1} на этаже ${f} уже занято.`],
   [/^Desk \d+ does not exist/, () => "Такого места на этаже нет."],
   [/^Agents can only work on office floors/, () => "Сотрудники могут работать только на офисных этажах."],
+  [/^The reception floor cannot be deleted/, () => "Этаж ресепшена удалить нельзя."],
+  [/^The floor with the director's office cannot be deleted/, () => "Этаж с кабинетом директора удалить нельзя."],
   [/^Floor has (\d+) agent/, (n) => `На этаже работают сотрудники (${n}). Сначала переведите или архивируйте их.`],
   [/^Floor number (\d+) is already taken/, (n) => `Этаж ${n} уже существует.`],
   [/^Capacity \d+ is below/, () => "Вместимость меньше, чем сотрудников на этаже."],

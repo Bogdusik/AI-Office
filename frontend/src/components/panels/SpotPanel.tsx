@@ -4,9 +4,8 @@ import { useMemo } from "react";
 import type { WorldState } from "@/lib/api";
 import { AGENT_STATUS } from "@/lib/labels";
 import { allAgents } from "@/lib/world";
-import { buildingLayout, siteLayout } from "@/scene/layout";
+import { buildingLayout, presence, siteLayout } from "@/scene/layout";
 import { useUiStore } from "@/store/useUiStore";
-import { isPresent } from "@/store/useWorldStore";
 import { Button, Empty, PanelShell, Pill } from "./ui";
 
 const KIND = { director: "Место директора", desk: "Место сотрудника", guest: "Гостевое место" } as const;
@@ -38,7 +37,7 @@ export function SpotPanel({ world, index }: { world: WorldState; index: number }
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <Pill label={status.label} color={status.color} />
-              <span className="text-xs text-ink/55">{isPresent(owner.agent, preview) ? "Машина на месте" : "Машины нет"}</span>
+              <span className="text-xs text-ink/55">{presence(owner.agent.status, preview).carParked ? "Машина на месте" : "Машины нет"}</span>
             </div>
             <Button onClick={() => focusOn({ kind: "agent", id: owner.agent.id }, owner.floor.number)}>К сотруднику</Button>
           </div>

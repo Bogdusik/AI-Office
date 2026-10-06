@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.events import publish_agent
 from app.models import Agent, Task
 from app.models.enums import AgentStatus
 from app.schemas.agent import AgentCreate, AgentUpdate
@@ -130,4 +131,5 @@ async def archive_agent(session: AsyncSession, agent_id: int) -> Agent:
     agent.status = AgentStatus.OFF_SITE
     await session.commit()
     await session.refresh(agent)
+    publish_agent(agent.id, agent.status)
     return agent

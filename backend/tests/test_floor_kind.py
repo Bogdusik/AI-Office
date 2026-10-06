@@ -85,3 +85,25 @@ async def test_change_kind(client: AsyncClient, make_floor: Factory, make_agent:
 
     bad = await client.patch(f"/api/v1/floors/{floor['id']}", json={"capacity": 0})
     assert bad.status_code == 422
+
+
+async def test_reception_and_director_floors_cannot_be_deleted(client: AsyncClient, make_floor: Factory) -> None:
+    reception = await make_floor(kind="reception")
+    director = await make_floor(has_director_office=True)
+    plain = await make_floor()
+
+    for floor, detail in ((reception, "reception"), (director, "director")):
+        res = await client.delete(f"/api/v1/floors/{floor['id']}")
+        assert res.status_code == 409
+        assert detail in res.json()["detail"]
+    assert (await client.delete(f"/api/v1/floors/{plain['id']}")).status_code == 204
+    remaining = {f["id"] for f in (await client.get("/api/v1/floors")).json()}
+    assert remaining == {reception["id"], director["id"]}
+
+
+def test_floor_deletable_rule() -> None:
+    rules.ensure_floor_deletable(FloorKind.OFFICE, False)
+    with pytest.raises(ConflictError):
+        rules.ensure_floor_deletable(FloorKind.RECEPTION, False)
+    with pytest.raises(ConflictError):
+        rules.ensure_floor_deletable(FloorKind.OFFICE, True)

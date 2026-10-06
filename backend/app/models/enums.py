@@ -11,6 +11,14 @@ class Provider(StrEnum):
     ANTHROPIC = "anthropic"
 
 
+class RunProvider(StrEnum):
+    """Who produced a run; `fake` marks the stand-in executor so its tokens never mix with real ones."""
+
+    OLLAMA = "ollama"
+    ANTHROPIC = "anthropic"
+    FAKE = "fake"
+
+
 class AgentStatus(StrEnum):
     OFF_SITE = "off_site"
     ARRIVING = "arriving"
@@ -47,3 +55,5 @@ class RunStatus(StrEnum):
     RUNNING = "running"
     SUCCEEDED = "succeeded"
     FAILED = "failed"
+    INTERRUPTED = "interrupted"
+    CANCELLED = "cancelled"

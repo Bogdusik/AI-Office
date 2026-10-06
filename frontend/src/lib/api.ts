@@ -107,12 +107,14 @@ export type Comment = { id: number; author: "director" | "agent"; body: string; 
 export type Run = {
   id: number;
   stage: TaskStage;
+  attempt: number;
   provider: string;
   model: string | null;
   input_tokens: number;
   output_tokens: number;
   status: string;
   error: string | null;
+  output: string;
   started_at: string;
   finished_at: string | null;
 };

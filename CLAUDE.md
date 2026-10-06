@@ -9,8 +9,8 @@ State lives in the database; the 3D scene only renders it. No business logic in 
 1. Scaffold — done
 2. Data model and API — done
 3. Static building — done
-4. Clicks and panels  ← **current**
-5. Tasks with a fake executor
+4. Clicks and panels — done
+5. Tasks with a fake executor  ← **current**
 6. Real AI via Ollama + web search
 7. Life animation
 8. Polish
@@ -27,11 +27,12 @@ Do only the current stage. Don't jump ahead.
 - `floors` — unique `number`, `kind` reception|office (at most one reception), `capacity` (reception = 0 and no agents; office > 0, default 5), `has_director_office`. Standard building: 1 Reception, 2 Career, 3 Engineering (director office).
 - `agents` — on a floor at a `desk_index` (unique per floor, `0..capacity-1`); `role_key` unique among active agents; `provider` ollama|anthropic, optional `model`, `web_access`, scene `status`. Never deleted: `DELETE` archives (`archived_at` set, `floor_id`/`desk_index` cleared). Archived agents are hidden from `/state` and don't count toward capacity.
 - `tasks` — per agent (FK `RESTRICT`), `status`, optional `stage` (plan|research|draft|self_check), queue `position`, timestamps.
-- `task_comments` (director|agent), `runs` (one LLM call per stage, tokens, error), `artifacts` (versioned markdown + `sources` URL list) — all hang off a task.
+- `task_comments` (director|agent), `runs` (one stage of one `attempt` = the artifact version it works towards; `provider` ollama|anthropic|fake, `output` text, `sources`, tokens, status running|succeeded|failed|interrupted|cancelled, error), `artifacts` (versioned markdown + `sources` URL list) — all hang off a task.
 
 Task status flow (enforced in `app/services/rules.py`, anything else → 409):
-`queued → in_progress → needs_review → done`, `needs_review → changes_requested → in_progress`, `in_progress ↔ paused`, `in_progress → failed`, any unfinished → `cancelled`.
-Director actions: approve, request-changes (comment required), pause, resume, cancel. `start`/`submit_for_review`/`fail` are executor-only service functions (no HTTP yet).
+`queued → in_progress → needs_review → done`, `needs_review → changes_requested → in_progress`, `in_progress → paused → queued` (resume puts it at the front of the queue), `in_progress → failed`, any unfinished → `cancelled`.
+Director actions: approve, request-changes (comment required), pause, resume (paused only), cancel. Only the executor moves a task to `in_progress`, `needs_review` or `failed`.
+Floors: the reception and the director-office floor can't be deleted (409).
 
 `GET /api/v1/state` is the scene's single snapshot: floors → active agents with `current_task` (priority in_progress > changes_requested > paused > needs_review), `queue_length`, `awaiting_review`; plus `stats` (`tasks_in_progress`, `awaiting_review` over active agents, `done_today` = tasks done since local midnight of the server).
 
@@ -79,6 +80,18 @@ Director actions: approve, request-changes (comment required), pause, resume, ca
 - Right panel: agent (tasks grouped: current, queue, review, finished; new task form; edit; archive with confirm), task card (actions by status, mirroring `rules.py`), hire on a free desk, parking spot. Director panel: team table, review queue, profile, floors (delete only empty office floors without the director office — UI rule).
 - HUD rows stop short of the right panel (`useRightPanelOpen`); desktop only, no mobile layout.
 - Dev-only `window.__aiOffice.screenOf(key)` gives page coordinates of a pick, so browser tests click real objects.
+
+## Executor and agent lifecycle (stage 5)
+- `app/executor/`: `Executor` starts with the app (`lifespan`, `EXECUTOR_ENABLED`). A supervisor loop keeps one asyncio worker per agent with something to do: agents run in parallel, each on one task at a time. A Postgres advisory lock allows one executor per database; every step is a short transaction that re-checks the status under `FOR UPDATE`, so director actions always win.
+- Stage work is behind `StageWorker.run(StageInput) -> StageOutput` (task, stage, version, profile, agent, comments, earlier stage outputs, earlier results → text, tokens, sources). Today only `FakeWorker` (sleeps `EXECUTOR_STAGE_SECONDS`, returns a Russian placeholder, runs get `provider = fake`). Stage 6 adds a real worker; nothing else should change.
+- Stage list: `rules.task_stages(web_access, version)` — the single place to change it. Version 1: plan, research (web access only), draft, self_check. Version 2+ (rework): plan skipped, starts from research/draft with the director's comments and the previous result.
+- Pick order: `in_progress` (after a restart) → `changes_requested` → `queued` by position.
+- Agent `status`: `off_site` + work → `arriving` (EXECUTOR_ARRIVE_SECONDS) → `idle` → `working` (stages; one `Run` each) → after self_check a new artifact version, task → `needs_review`, next task. No work but something in review → `waiting_review` (stays). Only paused tasks left → `idle` (stays, waits for the director). Everything finished/cancelled → `leaving` (EXECUTOR_DEPART_SECONDS) → `off_site`. A new task during `leaving` brings the agent back after it has left.
+- Pause takes effect at the stage boundary (the running stage finishes and is kept); resume continues from the first stage without a successful run of the current version. Cancel stops the running stage at once (run `cancelled`). Comments are read at the start of every stage. A stage error → run `failed` with the error, task `failed`, agent moves on.
+- Restart: `running` runs become `interrupted`, the stage runs again; `arriving` restarts, `leaving` completes, other statuses are reconciled by the loop.
+- Events: `app/events.py` in-process bus; services and the executor publish `agent` (status), `task` (status/stage, also on create), `artifact` (new version). `GET /api/v1/events` streams them as SSE (`retry`, 15 s ping). Frontend `EventSync` refreshes world + tasks on any event (debounced) and shows a notice for `needs_review`; `/state` polling is a 15 s fallback.
+- Scene presence (`scene/layout/presence.ts`): arriving → car only; idle/working/waiting_review → car + person at the desk; leaving → car only; off_site → nothing. `?preview=1` shows everyone.
+- Run the backend with `--timeout-graceful-shutdown 2`: open SSE streams otherwise block reloads.
 
 ## Rules
 - Secrets only in `.env` files (git-ignored); keep `.env.example` in sync.

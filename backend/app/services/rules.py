@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol, TypeVar
 
-from app.models.enums import FloorKind, TaskStatus
+from app.models.enums import FloorKind, TaskStage, TaskStatus
 from app.services.errors import ConflictError, ValidationFailedError
 
 TERMINAL_STATUSES: frozenset[TaskStatus] = frozenset(
@@ -16,7 +16,8 @@ ALLOWED_TRANSITIONS: dict[TaskStatus, frozenset[TaskStatus]] = {
     TaskStatus.IN_PROGRESS: frozenset(
         {TaskStatus.NEEDS_REVIEW, TaskStatus.PAUSED, TaskStatus.FAILED, TaskStatus.CANCELLED}
     ),
-    TaskStatus.PAUSED: frozenset({TaskStatus.IN_PROGRESS, TaskStatus.CANCELLED}),
+    # Resume puts a paused task back into the queue; only the executor moves it to in_progress again.
+    TaskStatus.PAUSED: frozenset({TaskStatus.QUEUED, TaskStatus.CANCELLED}),
     TaskStatus.NEEDS_REVIEW: frozenset(
         {TaskStatus.DONE, TaskStatus.CHANGES_REQUESTED, TaskStatus.CANCELLED}
     ),
@@ -32,6 +33,37 @@ CURRENT_TASK_PRIORITY: tuple[TaskStatus, ...] = (
     TaskStatus.PAUSED,
     TaskStatus.NEEDS_REVIEW,
 )
+
+
+EXECUTOR_PICK_ORDER: tuple[TaskStatus, ...] = (
+    TaskStatus.IN_PROGRESS,
+    TaskStatus.CHANGES_REQUESTED,
+    TaskStatus.QUEUED,
+)
+"""What an agent works on next: unfinished work first (after a restart), then rework, then the queue."""
+
+
+def task_stages(*, web_access: bool, version: int) -> tuple[TaskStage, ...]:
+    """Stages that produce result `version`. Rework (version 2+) skips the plan and starts from the
+    director's comments and the previous result; research needs web access. The single place to change it."""
+    stages: list[TaskStage] = []
+    if version <= 1:
+        stages.append(TaskStage.PLAN)
+    if web_access:
+        stages.append(TaskStage.RESEARCH)
+    stages += [TaskStage.DRAFT, TaskStage.SELF_CHECK]
+    return tuple(stages)
+
+
+def next_stage(stages: Sequence[TaskStage], done: Iterable[TaskStage]) -> TaskStage | None:
+    """First stage of the attempt that has no successful run yet; None when the attempt is complete."""
+    finished = set(done)
+    return next((s for s in stages if s not in finished), None)
+
+
+def front_position(positions: Iterable[int], fallback: int) -> int:
+    """Queue position that goes before every given one."""
+    return min(positions, default=fallback + 1) - 1
 
 
 class TransitionError(ConflictError):
@@ -105,6 +137,13 @@ def ensure_desk_in_range(desk_index: int, capacity: int) -> None:
         raise ConflictError(f"Desk {desk_index} does not exist on a floor of capacity {capacity}")
 
 
+def ensure_floor_deletable(kind: FloorKind, has_director_office: bool) -> None:
+    if kind == FloorKind.RECEPTION:
+        raise ConflictError("The reception floor cannot be deleted")
+    if has_director_office:
+        raise ConflictError("The floor with the director's office cannot be deleted")
+
+
 def ensure_floor_empty(active_agents: int) -> None:
     if active_agents > 0:
         raise ConflictError(f"Floor has {active_agents} agent(s); move or archive them first")
@@ -150,3 +189,10 @@ def pick_current_task(tasks: Sequence[T]) -> T | None:
         candidates,
         key=lambda t: (CURRENT_TASK_PRIORITY.index(t.status), t.position, t.id),
     )
+
+
+def pick_next_task(tasks: Sequence[T]) -> T | None:
+    candidates = [t for t in tasks if t.status in EXECUTOR_PICK_ORDER]
+    if not candidates:
+        return None
+    return min(candidates, key=lambda t: (EXECUTOR_PICK_ORDER.index(t.status), t.position, t.id))

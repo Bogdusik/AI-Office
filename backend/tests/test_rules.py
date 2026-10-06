@@ -4,6 +4,7 @@ from itertools import product
 
 import pytest
 
+from app.models.enums import TaskStage
 from app.models.enums import TaskStatus as S
 from app.services import rules
 from app.services.errors import ConflictError, ValidationFailedError
@@ -17,7 +18,7 @@ EXPECTED_ALLOWED = {
     (S.NEEDS_REVIEW, S.CHANGES_REQUESTED),
     (S.CHANGES_REQUESTED, S.IN_PROGRESS),
     (S.IN_PROGRESS, S.PAUSED),
-    (S.PAUSED, S.IN_PROGRESS),
+    (S.PAUSED, S.QUEUED),
     (S.IN_PROGRESS, S.FAILED),
     *((s, S.CANCELLED) for s in NON_TERMINAL),
 }
@@ -128,3 +129,46 @@ def test_pick_current_task_tie_breaks_by_position() -> None:
     later = FakeTask(1, S.PAUSED, 7)
     earlier = FakeTask(2, S.PAUSED, 3)
     assert rules.pick_current_task([later, earlier]) is earlier
+
+
+P, R, D, C = TaskStage.PLAN, TaskStage.RESEARCH, TaskStage.DRAFT, TaskStage.SELF_CHECK
+
+
+@pytest.mark.parametrize(
+    ("web_access", "version", "expected"),
+    [
+        (False, 1, (P, D, C)),
+        (True, 1, (P, R, D, C)),
+        (False, 2, (D, C)),
+        (True, 2, (R, D, C)),
+        (True, 5, (R, D, C)),
+    ],
+)
+def test_task_stages(web_access: bool, version: int, expected: tuple[TaskStage, ...]) -> None:
+    assert rules.task_stages(web_access=web_access, version=version) == expected
+
+
+def test_next_stage_skips_finished_ones() -> None:
+    stages = rules.task_stages(web_access=True, version=1)
+    assert rules.next_stage(stages, []) == P
+    assert rules.next_stage(stages, [P]) == R
+    assert rules.next_stage(stages, [P, R, D]) == C
+    assert rules.next_stage(stages, stages) is None
+
+
+def test_pick_next_task_order() -> None:
+    queued_late = FakeTask(1, S.QUEUED, 9)
+    queued_early = FakeTask(2, S.QUEUED, 2)
+    rework = FakeTask(3, S.CHANGES_REQUESTED, 5)
+    running = FakeTask(4, S.IN_PROGRESS, 7)
+    review = FakeTask(5, S.NEEDS_REVIEW, 1)
+    paused = FakeTask(6, S.PAUSED, 0)
+    assert rules.pick_next_task([queued_late, queued_early, rework, running, review, paused]) is running
+    assert rules.pick_next_task([queued_late, queued_early, rework, review]) is rework
+    assert rules.pick_next_task([queued_late, queued_early, review]) is queued_early
+    assert rules.pick_next_task([review, paused]) is None
+
+
+def test_front_position() -> None:
+    assert rules.front_position([3, 5], fallback=9) == 2
+    assert rules.front_position([], fallback=9) == 9
