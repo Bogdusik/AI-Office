@@ -3,10 +3,10 @@
 import { Canvas, useThree } from "@react-three/fiber";
 import { Suspense, useMemo } from "react";
 import type { WorldState } from "@/lib/api";
-import { cameraHome, rectCenter, rectSize } from "@/scene/layout";
+import { buildingLayout, cameraHome, rectCenter, rectSize, siteLayout } from "@/scene/layout";
 import { PALETTE } from "@/scene/palette";
 import { useWorldStore } from "@/store/useWorldStore";
-import { Building, useSiteLayout } from "./Building";
+import { Building } from "./Building";
 import { CameraRig } from "./CameraRig";
 
 const SUN_DIRECTION: [number, number, number] = [-0.45, 1, 0.65];
@@ -14,7 +14,10 @@ const SUN_DISTANCE = 120;
 const GROUND_SIZE = 4000;
 
 function World({ world }: { world: WorldState }) {
-  const { building, site } = useSiteLayout(world);
+  const { building, site } = useMemo(() => {
+    const b = buildingLayout(world.floors);
+    return { building: b, site: siteLayout(b) };
+  }, [world]);
   const viewport = useThree((s) => s.size);
   const home = useMemo(() => cameraHome(building, site, viewport), [building, site, viewport]);
   const [cx, cz] = rectCenter(site.focus);
@@ -46,7 +49,7 @@ function World({ world }: { world: WorldState }) {
         <meshStandardMaterial color={PALETTE.ground} roughness={1} />
       </mesh>
       <Suspense fallback={null}>
-        <Building world={world} />
+        <Building world={world} homeZoom={home.zoom} />
       </Suspense>
     </>
   );

@@ -1,5 +1,3 @@
-import { hashString } from "@/scene/layout";
-
 const GROUND = "#f1ede5";
 
 export const PALETTE = {
@@ -17,20 +15,26 @@ export const PALETTE = {
   steel: "#6f7680",
   dark: "#2d323b",
   screen: "#3d4a5c",
-  screenOn: "#9fc6d8",
-  chair: "#5b6370",
+  screenOn: "#a9d3e6",
+  chair: "#4d5562",
   free: "#d7d2c9",
   fabric: "#c9c4bb",
   fabricDark: "#a9a49b",
   rug: "#e9ddd2",
   plaque: "#fbfaf7",
   plaqueText: "#2d323b",
+  water: "#bfe0f0",
+  counter: "#e4ddd1",
+  appliance: "#d9dcdf",
   core: "#dcd6cb",
   shaftGlass: "#cfe0e6",
+  roof: "#d6d0c4",
+  hvac: "#b9bec4",
   road: "#8a8f96",
   roadLine: "#f3f1ea",
   asphalt: "#b4b7bb",
   curb: "#d6d1c6",
+  fence: "#7b8088",
   plant: "#7f9b78",
   leaf: ["#8faa7f", "#7d9a72", "#9bb08a"],
   conifer: "#6f8c6a",
@@ -40,11 +44,20 @@ export const PALETTE = {
   pot: "#b9a68b",
   trunk: "#a08a70",
   skin: "#e2c4a8",
+  hair: "#3a3530",
+  trousers: "#4a505b",
+  uniform: "#5d6b7d",
   accent: "#ff7a59",
 } as const;
 
 const OUTFITS = ["#6f8aa6", "#8b9e7c", "#a58c7a", "#7d7a99", "#6f9a9a", "#a3917a", "#8a8f99"] as const;
 const CARS = ["#c9ccd1", "#7e8fa3", "#a8b5a0", "#d8d2c4", "#8d8f94", "#b4a596"] as const;
+
+export function hashString(value: string): number {
+  let h = 0;
+  for (let i = 0; i < value.length; i++) h = (h * 31 + value.charCodeAt(i)) | 0;
+  return Math.abs(h);
+}
 
 export function outfitColor(roleKey: string): string {
   return OUTFITS[hashString(roleKey) % OUTFITS.length];
