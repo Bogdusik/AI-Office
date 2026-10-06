@@ -3,6 +3,8 @@
 Local 3D office where AI agents are the staff. Stage 3: static building rendered from `GET /api/v1/state`.
 
 
+Controls: left drag — rotate, right drag — pan, wheel — zoom to cursor, «Домой» — back to the default view.
+
 Add `?preview=1` to the URL to see every agent at their desk and every car parked, without touching the database.
 
 ## Requirements
