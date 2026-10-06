@@ -3,6 +3,7 @@ import { ApiStatus } from "@/components/hud/ApiStatus";
 import { Controls, PreviewBadge, WorldError } from "@/components/hud/Controls";
 import { Hotkeys } from "@/components/hud/Hotkeys";
 import { WorldSync } from "@/components/hud/WorldSync";
+import { DirectorPanel } from "@/components/panels/DirectorPanel";
 import { RightPanel } from "@/components/panels/RightPanel";
 import { SceneLoader } from "@/components/scene/SceneLoader";
 
@@ -23,6 +24,7 @@ export default function Home() {
       <Controls />
       <WorldError />
       <RightPanel />
+      <DirectorPanel />
     </main>
   );
 }
