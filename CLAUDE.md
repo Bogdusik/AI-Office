@@ -7,8 +7,8 @@ State lives in the database; the 3D scene only renders it. No business logic in 
 
 ## Stages
 1. Scaffold — done
-2. Data model and API  ← **current**
-3. Static building
+2. Data model and API — done
+3. Static building  ← **current**
 4. Clicks and panels
 5. Tasks with a fake executor
 6. Real AI via Ollama + web search
@@ -43,11 +43,23 @@ Director actions: approve, request-changes (comment required), pause, resume, ca
 - `backend/app/api/v1/` — thin routers under `/api/v1`
 - `backend/app/seed/` — idempotent seed (`python -m app.seed`), never overwrites existing rows
 - `backend/tests/` — pytest on a separate `ai_office_test` DB, recreated and migrated each run
-- `frontend/src/components/scene/` — R3F scene (render only)
-- `frontend/src/components/hud/` — DOM overlays
-- `frontend/src/store/` — zustand stores
+- `frontend/src/lib/api.ts` — `WorldState` types (mirror `backend/app/schemas/state.py`) + `fetchState`
+- `frontend/src/store/useWorldStore.ts` — polls `/api/v1/state` every 3 s; only replaces `world` when the payload changed
+- `frontend/src/store/useUiStore.ts` — UI-only state: selected floor, `?preview=1`, camera "home" requests
+- `frontend/src/scene/layout.ts` — **all** scene geometry as pure functions of world data (floor stacking, desks, office, core, entrance, parking, camera home)
+- `frontend/src/scene/palette.ts` — colours; one accent (`#ff7a59`) for director-related things
+- `frontend/src/components/scene/` — R3F scene from primitives (render only, reads stores)
+- `frontend/src/components/hud/` — DOM overlays (floor switcher, home, preview badge, API status)
+
+## Scene
+- Floors stack by sorted `number` with an air gap (`DIM.floorGap`) so lower floors stay visible from the iso camera; the core (elevator + stairs) and corner columns tie them together. Near walls (+x, +z) are omitted.
+- Agent + their car are shown only when `status !== 'off_site'`, or always with `?preview=1` (UI-only, never writes to the DB).
+- Parking: one spot per active agent (sorted by id) + spot 0 for the director.
+- Labels use a local font (`public/fonts/Inter-SemiBold.woff`), each wrapped in its own Suspense.
 
 ## Rules
 - Secrets only in `.env` files (git-ignored); keep `.env.example` in sync.
 - Schema changes only via Alembic migrations.
 - No auth, no extra libraries without a reason.
+- No coordinates in components: placement comes from `scene/layout.ts`; components only hold the internal proportions of a primitive model (desk, chair, car).
+- Merge feature branches into `main` with a regular merge (no squash).

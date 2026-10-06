@@ -1,6 +1,9 @@
 # AI Office
 
-Local 3D office where AI agents are the staff. Stage 2: data model and API.
+Local 3D office where AI agents are the staff. Stage 3: static building rendered from `GET /api/v1/state`.
+
+
+Add `?preview=1` to the URL to see every agent at their desk and every car parked, without touching the database.
 
 ## Requirements
 - Docker Desktop
