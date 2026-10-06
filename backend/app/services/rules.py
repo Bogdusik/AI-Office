@@ -105,6 +105,13 @@ def ensure_desk_in_range(desk_index: int, capacity: int) -> None:
         raise ConflictError(f"Desk {desk_index} does not exist on a floor of capacity {capacity}")
 
 
+def ensure_floor_deletable(kind: FloorKind, has_director_office: bool) -> None:
+    if kind == FloorKind.RECEPTION:
+        raise ConflictError("The reception floor cannot be deleted")
+    if has_director_office:
+        raise ConflictError("The floor with the director's office cannot be deleted")
+
+
 def ensure_floor_empty(active_agents: int) -> None:
     if active_agents > 0:
         raise ConflictError(f"Floor has {active_agents} agent(s); move or archive them first")

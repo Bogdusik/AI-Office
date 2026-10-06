@@ -15,6 +15,8 @@ const MESSAGES: [RegExp, (...m: string[]) => string][] = [
   [/^Desk (\d+) on floor (\d+) is taken/, (d, f) => `Место ${Number(d) + 1} на этаже ${f} уже занято.`],
   [/^Desk \d+ does not exist/, () => "Такого места на этаже нет."],
   [/^Agents can only work on office floors/, () => "Сотрудники могут работать только на офисных этажах."],
+  [/^The reception floor cannot be deleted/, () => "Этаж ресепшена удалить нельзя."],
+  [/^The floor with the director's office cannot be deleted/, () => "Этаж с кабинетом директора удалить нельзя."],
   [/^Floor has (\d+) agent/, (n) => `На этаже работают сотрудники (${n}). Сначала переведите или архивируйте их.`],
   [/^Floor number (\d+) is already taken/, (n) => `Этаж ${n} уже существует.`],
   [/^Capacity \d+ is below/, () => "Вместимость меньше, чем сотрудников на этаже."],
