@@ -1,11 +1,11 @@
 import { PALETTE } from "@/scene/palette";
-import type { Vec3 } from "@/scene/layout";
+import type { Placement } from "@/scene/layout";
 import { Block } from "./parts/Block";
 
-/** Low-poly car parked nose-in (towards -z). Origin on the ground at the car's centre. */
-export function Car({ position, color }: { position: Vec3; color: string }) {
+/** Low-poly car; local nose points to −z. Origin on the ground at the car's centre. */
+export function Car({ at, color }: { at: Placement; color: string }) {
   return (
-    <group position={position}>
+    <group position={at.position} rotation-y={at.yaw}>
       <Block position={[0, 0.5, 0]} size={[1.8, 0.5, 4]} color={color} />
       <Block position={[0, 0.95, 0.25]} size={[1.6, 0.42, 2.1]} color={color} />
       <Block position={[0, 0.95, 0.25]} size={[1.64, 0.3, 1.8]} color={PALETTE.dark} castShadow={false} />

@@ -1,4 +1,4 @@
-import type { Vec3 } from "@/scene/layout";
+import type { Box, Vec3 } from "@/scene/layout";
 
 type BlockProps = {
   position: Vec3;
@@ -6,6 +6,7 @@ type BlockProps = {
   color: string;
   opacity?: number;
   emissive?: string;
+  rotation?: Vec3;
   rotationY?: number;
   castShadow?: boolean;
   receiveShadow?: boolean;
@@ -17,6 +18,7 @@ export function Block({
   color,
   opacity = 1,
   emissive,
+  rotation,
   rotationY = 0,
   castShadow = true,
   receiveShadow = true,
@@ -25,7 +27,7 @@ export function Block({
   return (
     <mesh
       position={position}
-      rotation-y={rotationY}
+      rotation={rotation ?? [0, rotationY, 0]}
       castShadow={castShadow && !transparent}
       receiveShadow={receiveShadow}
     >
@@ -41,5 +43,25 @@ export function Block({
         emissiveIntensity={emissive ? 0.9 : 0}
       />
     </mesh>
+  );
+}
+
+type BoxesProps = { boxes: Box[]; color: string; opacity?: number; castShadow?: boolean };
+
+export function Boxes({ boxes, color, opacity, castShadow }: BoxesProps) {
+  return (
+    <>
+      {boxes.map((b, i) => (
+        <Block
+          key={i}
+          position={b.position}
+          size={b.size}
+          rotation={b.rotation}
+          color={color}
+          opacity={opacity}
+          castShadow={castShadow}
+        />
+      ))}
+    </>
   );
 }

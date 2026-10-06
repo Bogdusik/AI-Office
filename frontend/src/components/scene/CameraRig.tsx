@@ -1,57 +1,68 @@
 "use client";
 
-import { OrbitControls, OrthographicCamera } from "@react-three/drei";
+import { CameraControls, CameraControlsImpl, OrthographicCamera } from "@react-three/drei";
 import { useThree } from "@react-three/fiber";
-import { type ComponentRef, useEffect, useRef } from "react";
-import type { Camera } from "three";
+import { useEffect, useMemo, useRef } from "react";
+import { Box3, type Camera, Vector3 } from "three";
 import { CAMERA, type CameraHome } from "@/scene/layout";
 import { useUiStore } from "@/store/useUiStore";
 
-/** Places the camera imperatively on mount and on "home" — never from props, so polling can't move it. */
+const { ACTION } = CameraControlsImpl;
+
+/**
+ * Left drag rotates (full 360°, polar clamped), right drag pans inside a boundary box,
+ * wheel zooms smoothly towards the cursor. The camera is placed imperatively on mount and on "home",
+ * never from props, so polling and data changes can't move it.
+ */
 export function CameraRig({ home }: { home: CameraHome }) {
-  const controls = useRef<ComponentRef<typeof OrbitControls>>(null);
+  const controls = useRef<CameraControlsImpl>(null);
   const camera = useThree((s) => s.camera);
   const homeRequest = useUiStore((s) => s.homeRequest);
   const homeRef = useRef(home);
-  const placedFor = useRef<{ camera: Camera | null; request: number }>({ camera: null, request: -1 });
+  const placed = useRef<{ camera: Camera | null; request: number }>({ camera: null, request: -1 });
+
+  const boundary = useMemo(
+    () => new Box3(new Vector3(...home.boundary.min), new Vector3(...home.boundary.max)),
+    [home.boundary],
+  );
 
   useEffect(() => {
     homeRef.current = home;
   }, [home]);
 
   useEffect(() => {
+    controls.current?.setBoundary(boundary);
+  }, [boundary, camera]);
+
+  useEffect(() => {
     const ctl = controls.current;
     if (!ctl) return;
-    const placed = placedFor.current;
-    if (placed.camera === ctl.object && placed.request === homeRequest) return;
-
+    const last = placed.current;
+    const sameCamera = last.camera === ctl.camera;
+    if (sameCamera && last.request === homeRequest) return;
+    const animate = sameCamera;
     const h = homeRef.current;
-    const cam = ctl.object;
-    cam.position.set(...h.position);
-    if ("zoom" in cam) {
-      cam.zoom = h.zoom;
-      cam.updateProjectionMatrix();
-    }
-    ctl.target.set(...h.target);
-    ctl.update();
-    placedFor.current = { camera: cam, request: homeRequest };
+    void ctl.setLookAt(...h.position, ...h.target, animate);
+    void ctl.zoomTo(h.zoom, animate);
+    placed.current = { camera: ctl.camera, request: homeRequest };
   }, [camera, homeRequest]);
 
   return (
     <>
-      <OrthographicCamera makeDefault near={-200} far={400} />
-      <OrbitControls
+      <OrthographicCamera makeDefault near={-500} far={2000} />
+      <CameraControls
         ref={controls}
         makeDefault
-        enableDamping
-        enablePan={false}
-        zoomToCursor
-        minZoom={home.minZoom}
-        maxZoom={home.maxZoom}
         minPolarAngle={CAMERA.minPolar}
         maxPolarAngle={CAMERA.maxPolar}
-        minAzimuthAngle={CAMERA.azimuth - CAMERA.azimuthRange}
-        maxAzimuthAngle={CAMERA.azimuth + CAMERA.azimuthRange}
+        minZoom={home.minZoom}
+        maxZoom={home.maxZoom}
+        dollyToCursor
+        smoothTime={CAMERA.smoothTime}
+        draggingSmoothTime={CAMERA.draggingSmoothTime}
+        boundaryFriction={0.2}
+        mouseButtons={{ left: ACTION.ROTATE, right: ACTION.TRUCK, middle: ACTION.NONE, wheel: ACTION.ZOOM }}
+        touches={{ one: ACTION.TOUCH_ROTATE, two: ACTION.TOUCH_ZOOM_TRUCK, three: ACTION.TOUCH_TRUCK }}
       />
     </>
   );
