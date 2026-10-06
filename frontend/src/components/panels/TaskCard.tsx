@@ -19,7 +19,7 @@ function actionsFor(status: TaskStatus) {
     approve: status === "needs_review",
     requestChanges: status === "needs_review",
     pause: status === "in_progress",
-    resume: status === "paused" || status === "changes_requested",
+    resume: status === "paused",
     cancel: !TERMINAL.includes(status),
   };
 }

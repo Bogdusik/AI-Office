@@ -37,9 +37,9 @@ async def test_happy_path_with_changes_requested(
     assert body["status"] == "changes_requested"
     assert [(c["author"], c["body"]) for c in body["comments"]] == [("director", "Add sources")]
 
-    resumed = await client.post(f"/api/v1/tasks/{task['id']}/resume")
-    assert resumed.json()["status"] == "in_progress"
+    assert (await client.post(f"/api/v1/tasks/{task['id']}/resume")).status_code == 409
 
+    await task_service.start(db, task["id"])
     await task_service.submit_for_review(db, task["id"])
     done = await client.post(f"/api/v1/tasks/{task['id']}/approve")
     assert done.status_code == 200
@@ -109,8 +109,24 @@ async def test_pause_and_resume(
     assert (await client.post(f"/api/v1/tasks/{task['id']}/approve")).status_code == 409
 
     resumed = await client.post(f"/api/v1/tasks/{task['id']}/resume")
-    assert resumed.json()["status"] == "in_progress"
+    assert resumed.json()["status"] == "queued"
+    assert resumed.json()["started_at"] is not None
     assert (await client.post(f"/api/v1/tasks/{task['id']}/resume")).status_code == 409
+
+
+async def test_resume_puts_task_at_the_front_of_the_queue(
+    client: AsyncClient, db: AsyncSession, agent: dict[str, Any], make_task: Factory
+) -> None:
+    first = await make_task(agent["id"])
+    waiting = [await make_task(agent["id"]) for _ in range(2)]
+    await task_service.start(db, first["id"])
+    await task_service.pause(db, first["id"])
+
+    resumed = (await client.post(f"/api/v1/tasks/{first['id']}/resume")).json()
+    queued = (await client.get("/api/v1/tasks", params={"agent_id": agent["id"], "status": "queued"})).json()
+    by_position = [t["id"] for t in sorted(queued, key=lambda t: t["position"])]
+    assert by_position == [first["id"], *(t["id"] for t in waiting)]
+    assert resumed["position"] < min(t["position"] for t in waiting)
 
 
 @pytest.mark.parametrize("setup", ["queued", "in_progress", "paused", "needs_review", "changes_requested"])

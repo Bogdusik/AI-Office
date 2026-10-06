@@ -33,4 +33,6 @@ export const RUN_STATUS: Record<string, string> = {
   running: "Идёт",
   succeeded: "Успешно",
   failed: "Ошибка",
+  interrupted: "Прерван перезапуском",
+  cancelled: "Отменён",
 };
