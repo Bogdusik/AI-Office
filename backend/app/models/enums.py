@@ -1,6 +1,11 @@
 from enum import StrEnum
 
 
+class FloorKind(StrEnum):
+    RECEPTION = "reception"
+    OFFICE = "office"
+
+
 class Provider(StrEnum):
     OLLAMA = "ollama"
     ANTHROPIC = "anthropic"

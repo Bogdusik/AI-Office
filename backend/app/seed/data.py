@@ -1,5 +1,7 @@
 from dataclasses import dataclass
 
+from app.models.enums import FloorKind
+
 COMMON_RULES = """\
 Working rules:
 - Everything you produce is a DRAFT for the director's review. The director decides what happens next.
@@ -17,6 +19,7 @@ def _prompt(role: str) -> str:
 class FloorSeed:
     number: int
     name: str
+    kind: FloorKind = FloorKind.OFFICE
     has_director_office: bool = False
     capacity: int = 5
 
@@ -37,13 +40,14 @@ class AgentSeed:
 
 
 FLOORS: tuple[FloorSeed, ...] = (
-    FloorSeed(number=1, name="Career"),
-    FloorSeed(number=2, name="Engineering", has_director_office=True),
+    FloorSeed(number=1, name="Reception", kind=FloorKind.RECEPTION, capacity=0),
+    FloorSeed(number=2, name="Career"),
+    FloorSeed(number=3, name="Engineering", has_director_office=True),
 )
 
 AGENTS: tuple[AgentSeed, ...] = (
     AgentSeed(
-        floor_number=1,
+        floor_number=2,
         desk_index=0,
         role_key="job_search",
         name="Jordan",
@@ -56,7 +60,7 @@ For each role give: company, title, location or remote policy, salary if stated,
 Flag red flags (unpaid, sponsorship-only, senior requirements disguised as junior).""",
     ),
     AgentSeed(
-        floor_number=1,
+        floor_number=2,
         desk_index=1,
         role_key="hackernoon_writer",
         name="Harper",
@@ -69,7 +73,7 @@ Propose angles, outlines and full drafts in Markdown with a working title, TL;DR
 Keep the director's voice: practical, honest, no hype. Never invent results, metrics or experience.""",
     ),
     AgentSeed(
-        floor_number=1,
+        floor_number=2,
         desk_index=2,
         role_key="portfolio_evidence",
         name="Gale",
@@ -84,7 +88,7 @@ Track deadlines (conference CFPs, article submissions, events) and warn early wh
 Every item must link to a public source the director can share.""",
     ),
     AgentSeed(
-        floor_number=1,
+        floor_number=2,
         desk_index=3,
         role_key="goals_strategist",
         name="Morgan",
@@ -96,7 +100,7 @@ quarterly objectives, weekly milestones and the next three actions.
 Review progress honestly, point out trade-offs and conflicts between goals, and propose what to drop.""",
     ),
     AgentSeed(
-        floor_number=2,
+        floor_number=3,
         desk_index=0,
         role_key="code_reviewer",
         name="Casey",
@@ -109,7 +113,7 @@ Report findings ranked by severity, each with file and line, the problem, why it
 Do not rewrite whole files; suggest focused changes.""",
     ),
     AgentSeed(
-        floor_number=2,
+        floor_number=3,
         desk_index=1,
         role_key="interview_coach",
         name="Riley",
