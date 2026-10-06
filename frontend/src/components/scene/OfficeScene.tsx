@@ -1,48 +1,74 @@
 "use client";
 
-import { Canvas } from "@react-three/fiber";
-import { OrbitControls, OrthographicCamera } from "@react-three/drei";
+import { Canvas, useThree } from "@react-three/fiber";
+import { Suspense, useMemo } from "react";
+import type { WorldState } from "@/lib/api";
+import { buildingLayout, cameraHome, rectCenter, rectSize, siteLayout } from "@/scene/layout";
+import { PALETTE } from "@/scene/palette";
+import { useWorldStore } from "@/store/useWorldStore";
+import { Building } from "./Building";
+import { CameraRig } from "./CameraRig";
 
-const ISO_DISTANCE = 20;
+const SUN_DIRECTION: [number, number, number] = [-0.45, 1, 0.65];
+const SUN_DISTANCE = 120;
+const GROUND_SIZE = 4000;
+
+function World({ world }: { world: WorldState }) {
+  const { building, site } = useMemo(() => {
+    const b = buildingLayout(world.floors);
+    return { building: b, site: siteLayout(b) };
+  }, [world]);
+  const viewport = useThree((s) => s.size);
+  const home = useMemo(() => cameraHome(building, site, viewport), [building, site, viewport]);
+  const [cx, cz] = rectCenter(site.focus);
+  const [w, d] = rectSize(site.focus);
+  const half = Math.max(w, d) * 0.7;
+
+  return (
+    <>
+      <CameraRig home={home} />
+      <hemisphereLight args={["#fffdf8", "#e9e2d6", 2.2]} />
+      <directionalLight
+        position={[cx + SUN_DIRECTION[0] * SUN_DISTANCE, SUN_DIRECTION[1] * SUN_DISTANCE, cz + SUN_DIRECTION[2] * SUN_DISTANCE]}
+        target-position={[cx, 0, cz]}
+        intensity={1.2}
+        castShadow
+        shadow-mapSize={[4096, 4096]}
+        shadow-bias={-0.0004}
+        shadow-normalBias={0.04}
+        shadow-radius={6}
+        shadow-camera-left={-half}
+        shadow-camera-right={half}
+        shadow-camera-top={half}
+        shadow-camera-bottom={-half}
+        shadow-camera-near={1}
+        shadow-camera-far={SUN_DISTANCE * 2.5}
+      />
+      <mesh rotation-x={-Math.PI / 2} position={[cx, 0, cz]} receiveShadow>
+        <planeGeometry args={[GROUND_SIZE, GROUND_SIZE]} />
+        <meshStandardMaterial color={PALETTE.ground} roughness={1} />
+      </mesh>
+      <Suspense fallback={null}>
+        <Building world={world} homeZoom={home.zoom} />
+      </Suspense>
+    </>
+  );
+}
 
 export function OfficeScene() {
+  const world = useWorldStore((s) => s.world);
+
   return (
-    <Canvas shadows="percentage" className="absolute inset-0" gl={{ antialias: true }}>
-      <color attach="background" args={["#14161f"]} />
-      <OrthographicCamera
-        makeDefault
-        position={[ISO_DISTANCE, ISO_DISTANCE, ISO_DISTANCE]}
-        zoom={60}
-        near={0.1}
-        far={200}
-      />
-      <hemisphereLight args={["#fff4e0", "#2a2f45", 0.9]} />
-      <directionalLight
-        position={[8, 14, 6]}
-        intensity={1.4}
-        castShadow
-        shadow-mapSize={[2048, 2048]}
-        shadow-camera-left={-10}
-        shadow-camera-right={10}
-        shadow-camera-top={10}
-        shadow-camera-bottom={-10}
-      />
-      <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
-        <planeGeometry args={[20, 20]} />
-        <meshStandardMaterial color="#d9d2c3" />
-      </mesh>
-      <mesh position={[0, 0.5, 0]} castShadow>
-        <boxGeometry args={[1, 1, 1]} />
-        <meshStandardMaterial color="#ff8a3d" />
-      </mesh>
-      <OrbitControls
-        makeDefault
-        target={[0, 0, 0]}
-        enableDamping
-        minZoom={20}
-        maxZoom={200}
-        maxPolarAngle={Math.PI / 2.2}
-      />
+    <Canvas
+      flat
+      shadows="percentage"
+      className="absolute inset-0"
+      gl={{ antialias: true }}
+      dpr={[1, 2]}
+      onContextMenu={(e) => e.preventDefault()}
+    >
+      <color attach="background" args={[PALETTE.sky]} />
+      {world && <World world={world} />}
     </Canvas>
   );
 }

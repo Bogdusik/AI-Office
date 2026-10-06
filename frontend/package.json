@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "check:layout": "node --experimental-strip-types --no-warnings --import ./scripts/register-ts.mjs scripts/check-layout.mts"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.9",
