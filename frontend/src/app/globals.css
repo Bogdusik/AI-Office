@@ -1,0 +1,18 @@
+@import "tailwindcss";
+
+@theme {
+  --color-ink: #14161f;
+  --color-paper: #f3efe6;
+  --color-signal-ok: #3ddc97;
+  --color-signal-down: #ff5d5d;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: var(--color-ink);
+  color: var(--color-paper);
+}
