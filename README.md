@@ -5,7 +5,7 @@ Local 3D office where AI agents are the staff. Stage 3: static building rendered
 
 Controls: left drag — rotate, right drag — pan, wheel — zoom to cursor, «Домой» — back to the default view.
 
-Add `?preview=1` to the URL to see every agent at their desk and every car parked, without touching the database.
+Add `?preview=1` to the URL to see every agent at their desk and every car parked, without touching the database. `?routes=1` draws the car route graph.
 
 ## Requirements
 - Docker Desktop
@@ -51,6 +51,9 @@ cd frontend; npm run dev
 - http://localhost:3000 → scene with a cube and "API: ok" in the top-right corner
 
 ## Tests
+
+Frontend layout checks: `cd frontend; npm run check:layout`.
+
 
 ```powershell
 cd backend

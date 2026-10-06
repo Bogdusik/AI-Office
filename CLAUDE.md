@@ -24,7 +24,7 @@ Do only the current stage. Don't jump ahead.
 
 ## Data model
 - `profile` — single row (`id = 1`): name, summary, goal, constraints, notes (markdown).
-- `floors` — unique `number`, `capacity` (default 5), `has_director_office`.
+- `floors` — unique `number`, `kind` reception|office (at most one reception), `capacity` (reception = 0 and no agents; office > 0, default 5), `has_director_office`. Standard building: 1 Reception, 2 Career, 3 Engineering (director office).
 - `agents` — on a floor at a `desk_index` (unique per floor, `0..capacity-1`); `role_key` unique among active agents; `provider` ollama|anthropic, optional `model`, `web_access`, scene `status`. Never deleted: `DELETE` archives (`archived_at` set, `floor_id`/`desk_index` cleared). Archived agents are hidden from `/state` and don't count toward capacity.
 - `tasks` — per agent (FK `RESTRICT`), `status`, optional `stage` (plan|research|draft|self_check), queue `position`, timestamps.
 - `task_comments` (director|agent), `runs` (one LLM call per stage, tokens, error), `artifacts` (versioned markdown + `sources` URL list) — all hang off a task.
@@ -46,25 +46,32 @@ Director actions: approve, request-changes (comment required), pause, resume, ca
 - `frontend/src/lib/api.ts` — `WorldState` types (mirror `backend/app/schemas/state.py`) + `fetchState`
 - `frontend/src/store/useWorldStore.ts` — polls `/api/v1/state` every 3 s; only replaces `world` when the payload changed
 - `frontend/src/store/useUiStore.ts` — UI-only state: selected floor, `?preview=1`, camera "home" requests
-- `frontend/src/scene/layout.ts` — **all** scene geometry as pure functions of world data (floor stacking, desks, office, core, entrance, parking, camera home)
+- `frontend/src/scene/layout/` — **all** scene geometry as pure functions (import as `@/scene/layout`):
+  `types` (Part, place), `dims` (DIM, CAMERA, FADE), `models` (primitive furniture/cars/trees as parts), `building` (floors, zones, walls, core, stairs, entrance, roof),
+  `site` (roads, intersection, parking, fence, car route graph), `greenery`, `camera` (home view, wall/roof fading), `assemble` (`buildScene` → parts, walls, labels, roof, routes)
+- `frontend/scripts/check-layout.mts` — `npm run check:layout`: parking/route invariants of the pure layout (no test runner)
 - `frontend/src/scene/palette.ts` — colours; one accent (`#ff7a59`) for director-related things
 - `frontend/src/components/scene/` — R3F scene from primitives (render only, reads stores)
 - `frontend/src/components/hud/` — DOM overlays (floor switcher, home, preview badge, API status)
 
 ## Scene
-- Floor plan zones: desk grid (from `capacity`), side zone (director office or lounge), and on the ground floor only a front lobby strip (reception, waiting area) with full-height glass doors, canopy and card reader.
+- Office floors: desk grid (from `capacity`; desk with 2 monitors, speakers, bottle, executive chair), side zone (director office or lounge), kitchen zone. The reception floor has no desks: two-seat counter with two static staff figures (decor, not agents), guest seating groups, big glass doors with canopy and card reader.
+- Rendering: `buildScene()` returns parts; `parts/Batches` draws them with one InstancedMesh per (shape, finish). Walls are merged per wall (`parts/Walls`) so each can fade. Only the sun casts shadows; no other light sources.
+- Roof (parapet, HVAC, AC units) shows only in "All" mode and fades in when zoomed well out (`roofOpacity`).
+- Roads: main road + cross road with an intersection; UK left-hand traffic. `routes()` gives arrive (map edge → entry barrier), toSpot, fromSpot, depart (exit barrier → map edge); `?routes=1` draws them. Cars don't move yet (stage 7).
 - Floors stack by sorted `number`. The slab pitch comes from `floorPitch()`: just enough air so every back-row plaque of a lower floor is visible from the home camera.
 - Core on the −x side: glass elevator shaft in front (landing doors on the building's inner wall), switchback stairs with landings and rails behind it.
 - Walls exist on all four sides and fade when they face the camera (`facadeOpacity` + `parts/Fade`), damped per frame, no React re-renders. Entrance doors/canopy never fade.
 - Labels and plaques turn to the camera around Y (`parts/FaceCamera`); don't use drei `Billboard` with locked axes — it flips when the camera is behind.
 - Agent + their car are shown only when `status !== 'off_site'`, or always with `?preview=1` (UI-only, never writes to the DB).
-- Parking: spot 0 director, then one spot per desk (floor order, `desk_index`), then 2 guest spots; separate entry/exit lanes with barriers.
-- Camera: drei `CameraControls` (orthographic). Left drag rotates 360° (polar clamped 15–75°), right drag pans (target clamped around the building), wheel zooms smoothly to the cursor; "home" animates back to `cameraHome()`.
+- Parking: spot 0 director, then one spot per desk (floor order, `desk_index`), then 2 guest spots; separate entry/exit lanes with barriers; perimeter fence with a gap at the lanes.
+- Camera: drei `CameraControls` (orthographic). Left drag rotates 360° (polar clamped 15–75°), right drag pans (target clamped to the whole site), wheel zooms smoothly to the cursor; "home" animates back to `cameraHome()`.
 - Labels use a local font (`public/fonts/Inter-SemiBold.woff`), each wrapped in its own Suspense.
 
 ## Rules
 - Secrets only in `.env` files (git-ignored); keep `.env.example` in sync.
 - Schema changes only via Alembic migrations.
 - No auth, no extra libraries without a reason.
-- No coordinates in components: placement comes from `scene/layout.ts`; components only hold the internal proportions of a primitive model (desk, chair, car).
+- No sizes or coordinates in components: everything comes from `scene/layout/` (models included); components only render.
+- Python edits on Windows: always pass `encoding="utf-8"` (the default cp1252 corrupts non-ASCII).
 - Merge feature branches into `main` with a regular merge (no squash).
