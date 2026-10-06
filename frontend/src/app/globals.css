@@ -1,9 +1,11 @@
 @import "tailwindcss";
 
 @theme {
-  --color-ink: #14161f;
-  --color-paper: #f3efe6;
-  --color-signal-ok: #3ddc97;
+  --color-ink: #2d323b;
+  --color-paper: #f6f3ee;
+  --color-sky: #eef0ee;
+  --color-accent: #ff7a59;
+  --color-signal-ok: #2fbf83;
   --color-signal-down: #ff5d5d;
   --font-mono: var(--font-geist-mono), ui-monospace, monospace;
 }
@@ -13,6 +15,6 @@ body {
   height: 100%;
   margin: 0;
   overflow: hidden;
-  background: var(--color-ink);
-  color: var(--color-paper);
+  background: var(--color-sky);
+  color: var(--color-ink);
 }
