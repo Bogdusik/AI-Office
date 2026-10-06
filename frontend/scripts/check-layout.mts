@@ -3,6 +3,7 @@
  *   node --experimental-strip-types --no-warnings --import ./scripts/register-ts.mjs scripts/check-layout.mts
  */
 import assert from "node:assert/strict";
+import { RIBBON, ribbonState } from "@/lib/stages";
 import { MAP_EDGES, type Vec3, buildScene, inRect, routeGraph } from "@/scene/layout";
 
 type FloorFixture = Parameters<typeof buildScene>[0][number];
@@ -14,7 +15,7 @@ const floor = (number: number, kind: "reception" | "office", capacity: number, o
   kind,
   capacity,
   has_director_office: office,
-  agents: Array.from({ length: agents }, (_, i) => ({ id: number * 100 + i, deskIndex: i, roleKey: `r${number}${i}`, title: "T", present: true })),
+  agents: Array.from({ length: agents }, (_, i) => ({ id: number * 100 + i, deskIndex: i, roleKey: `r${number}${i}`, title: "T", present: true, status: "S", statusColor: "#000" })),
 });
 
 const standard = [floor(1, "reception", 0), floor(2, "office", 5, false, 4), floor(3, "office", 5, true, 2)];
@@ -109,6 +110,48 @@ for (const [label, floors, expectedSpots] of [
     assert.equal(building.floors[0].capacity, 0);
     assert.ok(building.kitchenZone.x0 >= building.sideZone.x1);
   });
+
+  check(`${label}: every agent, desk, spot and the director's office is pickable once`, () => {
+    const keys = scene.picks.map((p) => p.key);
+    assert.equal(new Set(keys).size, keys.length);
+    const desks = floors.reduce((n, f) => n + (f.kind === "office" ? f.capacity : 0), 0);
+    assert.equal(scene.picks.filter((p) => p.target.kind === "agent" || p.target.kind === "desk").length, desks);
+    for (const f of floors) for (const a of f.agents) assert.ok(keys.includes(`agent:${a.id}`), `agent ${a.id} pickable`);
+    assert.equal(scene.picks.filter((p) => p.target.kind === "spot").length, site.spots.length);
+    const director = scene.picks.filter((p) => p.target.kind === "director");
+    assert.equal(director.length, 1);
+    assert.equal(director[0].floorNumber, 3);
+  });
+
+  check(`${label}: hidden floors are not pickable`, () => {
+    const lower = buildScene(floors, (n) => n <= 2);
+    assert.ok(lower.picks.every((p) => p.floorNumber === null || p.floorNumber <= 2));
+    assert.equal(lower.picks.filter((p) => p.target.kind === "director").length, 0);
+    assert.equal(lower.picks.filter((p) => p.target.kind === "spot").length, site.spots.length);
+  });
+
+  check(`${label}: pick volumes sit inside their floor storey`, () => {
+    for (const p of scene.picks) {
+      if (p.floorNumber === null) continue;
+      const f = building.floors.find((x) => x.number === p.floorNumber)!;
+      const [, y] = p.box.position;
+      const h = p.box.size[1];
+      assert.ok(y - h / 2 >= f.baseY - 1e-6 && y + h / 2 <= f.baseY + building.pitch, `${p.key} within storey`);
+    }
+  });
 }
+
+check("stage ribbon follows the task lifecycle", () => {
+  assert.equal(RIBBON.length, 7);
+  assert.deepEqual(ribbonState("queued", null), { current: 0, complete: false, halted: false });
+  assert.equal(ribbonState("in_progress", null).current, 1);
+  assert.equal(ribbonState("in_progress", "research").current, 2);
+  assert.equal(ribbonState("paused", "self_check").current, 4);
+  assert.equal(ribbonState("changes_requested", "draft").current, 3);
+  assert.equal(ribbonState("needs_review", "self_check").current, 5);
+  assert.deepEqual(ribbonState("done", "self_check"), { current: 6, complete: true, halted: false });
+  assert.deepEqual(ribbonState("cancelled", null), { current: 0, complete: false, halted: true });
+  assert.equal(ribbonState("failed", "draft").current, 3);
+});
 
 console.log(`\n${checks} checks passed`);

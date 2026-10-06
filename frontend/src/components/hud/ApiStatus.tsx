@@ -52,7 +52,7 @@ export function ApiStatus() {
   return (
     <div
       data-testid="api-status"
-      className="pointer-events-none absolute top-4 right-4 flex items-center gap-2 rounded-full border border-ink/10 bg-white/85 px-3 py-1.5 font-mono text-xs tracking-wide text-ink shadow-[0_8px_30px_-12px_rgba(20,22,31,0.35)] backdrop-blur"
+      className="pointer-events-none flex items-center gap-2 rounded-full border border-line bg-white/90 px-3 py-1.5 font-mono text-xs tracking-wide whitespace-nowrap text-ink shadow-[0_12px_40px_-18px_rgba(20,22,31,0.45)] backdrop-blur"
     >
       <span className={`h-2 w-2 rounded-full ${DOT[status]}`} />
       {LABEL[status]}

@@ -1,9 +1,10 @@
 # AI Office
 
-Local 3D office where AI agents are the staff. Stage 3: static building rendered from `GET /api/v1/state`.
+Local 3D office where AI agents are the staff. Stage 4: the building from `GET /api/v1/state` with selection, panels and a HUD (no task executor yet — tasks stay queued).
 
 
 Controls: left drag — rotate, right drag — pan, wheel — zoom to cursor, «Домой» — back to the default view.
+Click an agent, a free desk, the director's office or a parking spot to open its panel; Esc closes the innermost layer. «Кабинет директора» opens the team table, review queue, profile and floor management.
 
 Add `?preview=1` to the URL to see every agent at their desk and every car parked, without touching the database. `?routes=1` draws the car route graph.
 

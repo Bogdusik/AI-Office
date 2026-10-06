@@ -1,15 +1,20 @@
 from collections import defaultdict
+from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Agent, Floor, Task
 from app.models.enums import TaskStatus
-from app.schemas.state import AgentState, CurrentTask, FloorState, WorldState
+from app.schemas.state import AgentState, CurrentTask, FloorState, WorldState, WorldStats
 from app.services import rules
 
 
-async def build_state(session: AsyncSession) -> WorldState:
+def start_of_local_day(now: datetime) -> datetime:
+    return now.astimezone().replace(hour=0, minute=0, second=0, microsecond=0)
+
+
+async def build_state(session: AsyncSession, now: datetime | None = None) -> WorldState:
     floors = (await session.scalars(select(Floor).order_by(Floor.number))).all()
     agents = (
         await session.scalars(
@@ -55,6 +60,15 @@ async def build_state(session: AsyncSession) -> WorldState:
             )
         )
 
+    done_today = await session.scalar(
+        select(func.count())
+        .select_from(Task)
+        .where(
+            Task.status == TaskStatus.DONE,
+            Task.finished_at >= start_of_local_day(now or datetime.now().astimezone()),
+        )
+    )
+
     return WorldState(
         floors=[
             FloorState(
@@ -67,5 +81,10 @@ async def build_state(session: AsyncSession) -> WorldState:
                 agents=agents_by_floor[f.id],
             )
             for f in floors
-        ]
+        ],
+        stats=WorldStats(
+            tasks_in_progress=sum(t.status == TaskStatus.IN_PROGRESS for t in tasks),
+            awaiting_review=sum(t.status == TaskStatus.NEEDS_REVIEW for t in tasks),
+            done_today=done_today or 0,
+        ),
     )

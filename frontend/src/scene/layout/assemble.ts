@@ -27,14 +27,17 @@ import {
 import { DIM } from "./dims";
 import { greenery } from "./greenery";
 import * as M from "./models";
+import { type Pick, deskPick, directorPick, spotPick } from "./picks";
 import { type Routes, type SiteLayout, routes, siteLayout } from "./site";
 import { type Box, type FloorInput, type Part, type Placement, type Rect, type Vec3, boxIn, cube, part, place, rectCenter, rectSize } from "./types";
 
-export type AgentInput = { id: number; deskIndex: number; roleKey: string; title: string; present: boolean };
+/** `status`/`statusColor` arrive already localised: the layout only places them. */
+export type AgentInput = { id: number; deskIndex: number; roleKey: string; title: string; present: boolean; status: string; statusColor: string };
 export type FloorData = FloorInput & { id: number; name: string; agents: AgentInput[] };
 
 export type LabelSpec =
-  | { kind: "plaque"; key: string; position: Vec3; text: string }
+  | { kind: "plaque"; key: string; position: Vec3; text: string; status: string; statusColor: string }
+  | { kind: "tag"; key: string; position: Vec3; text: string; status: string; statusColor: string }
   | { kind: "floorSign"; key: string; position: Vec3; number: number; name: string }
   | { kind: "sign"; key: string; position: Vec3; text: string; size: number; color: string; board?: string; faceCamera: boolean }
   | { kind: "ground"; key: string; position: Vec3; text: string; size: number; color: string };
@@ -50,6 +53,7 @@ export type SceneSpec = {
   walls: Wall[];
   labels: LabelSpec[];
   roof: Part[];
+  picks: Pick[];
 };
 
 const at = (x: number, y: number, z: number, yaw = 0): Placement => ({ position: [x, y, z], yaw });
@@ -61,16 +65,17 @@ const flat = (r: Rect, y: number, color: string, finish: Part["finish"] = "decal
   return cube([cx, y, cz], [w, 0.02, d], color, finish);
 };
 
-function workstations(floor: FloorData, f: FloorLayout, parts: Part[], labels: LabelSpec[]) {
+function workstations(floor: FloorData, f: FloorLayout, parts: Part[], labels: LabelSpec[], picks: Pick[]) {
   const byDesk = new Map(floor.agents.map((a) => [a.deskIndex, a]));
   for (const i of deskIndices(f.capacity)) {
     const t = deskTransform(i);
     const agent = byDesk.get(i);
     const [dx, , dz] = t.desk;
     parts.push(...place(M.workstation(agent !== undefined, agent?.present ?? false), at(dx, f.baseY, dz)));
+    picks.push(deskPick(f, i, agent ? { kind: "agent", id: agent.id } : { kind: "desk", floorId: floor.id, deskIndex: i }));
     if (!agent) continue;
     if (agent.present) parts.push(...place(M.seatedPerson(outfitColor(agent.roleKey)), at(t.seat[0], f.baseY + t.seat[1], t.seat[2])));
-    labels.push({ kind: "plaque", key: `plaque-${agent.id}`, position: [t.plaque[0], f.baseY + t.plaque[1], t.plaque[2]], text: agent.title });
+    labels.push({ kind: "plaque", key: `plaque-${agent.id}`, position: [t.plaque[0], f.baseY + t.plaque[1], t.plaque[2]], text: agent.title, status: agent.status, statusColor: agent.statusColor });
   }
 }
 
@@ -92,10 +97,11 @@ function glassRoom(room: Rect, doorGap: { from: number; to: number }, y: number,
   ];
 }
 
-function officeZones(b: BuildingLayout, f: FloorLayout, parts: Part[], walls: Wall[], labels: LabelSpec[]) {
+function officeZones(b: BuildingLayout, f: FloorLayout, parts: Part[], walls: Wall[], labels: LabelSpec[], picks: Pick[]) {
   const y = f.baseY;
   if (f.hasDirectorOffice) {
     const room = b.officeRoom;
+    picks.push(directorPick(b, f));
     const o = officeFurniture(room);
     parts.push(flat({ x0: room.x0 + 0.2, x1: room.x1 - 0.2, z0: room.z0 + 0.2, z1: room.z1 - 0.2 }, y + 0.011, PALETTE.rug));
     parts.push(...place(M.workstation(true, true), at(o.desk.position[0], y, o.desk.position[2], o.desk.yaw)));
@@ -324,6 +330,7 @@ export function buildScene(floors: readonly FloorData[], visible: (floorNumber: 
   const parts: Part[] = [];
   const walls: Wall[] = [];
   const labels: LabelSpec[] = [];
+  const picks: Pick[] = [];
 
   const shown = building.floors.filter((f) => visible(f.number));
   const topShown = shown.at(-1)?.number;
@@ -339,22 +346,25 @@ export function buildScene(floors: readonly FloorData[], visible: (floorNumber: 
     walls.push(...floorWalls(building, f).map((w) => ({ ...w, solidColor: PALETTE.wall })));
     if (f.kind === "reception") receptionFloor(building, f, parts, labels);
     else {
-      workstations(floor, f, parts, labels);
-      officeZones(building, f, parts, walls, labels);
+      workstations(floor, f, parts, labels, picks);
+      officeZones(building, f, parts, walls, labels, picks);
     }
     coreStorey(building, f, floor, isTop, parts, walls, labels);
   }
   if (building.floors.length > 0) parts.push(...entranceParts(entrance));
 
   parts.push(...roadParts(site), ...parkingParts(site, labels));
+  picks.push(...site.spots.map(spotPick));
   for (const f of building.floors) {
     for (const a of byNumber.get(f.number)?.agents ?? []) {
       if (!a.present) continue;
       const spot = site.spots[site.deskSpot(f.index, a.deskIndex)];
-      if (spot) parts.push(...place(M.car(carColor(a.roleKey)), { position: spot.center, yaw: spot.yaw }));
+      if (!spot) continue;
+      parts.push(...place(M.car(carColor(a.roleKey)), { position: spot.center, yaw: spot.yaw }));
+      labels.push({ kind: "tag", key: `car-${a.id}`, position: [spot.center[0], DIM.carTag.y, spot.center[2]], text: a.title, status: a.status, statusColor: a.statusColor });
     }
   }
   parts.push(...greeneryParts(greenery(building, site, entrance)));
 
-  return { building, site, entrance, routes: routes(site), parts, walls, labels, roof: roofParts(building) };
+  return { building, site, entrance, routes: routes(site), parts, walls, labels, roof: roofParts(building), picks };
 }
