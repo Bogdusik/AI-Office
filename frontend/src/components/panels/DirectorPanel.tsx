@@ -128,7 +128,10 @@ const PROFILE_FIELDS: { key: keyof ProfileUpdate; label: string; hint: string; r
 ];
 
 function ProfileForm({ initial }: { initial: Profile }) {
-  const [form, setForm] = useState<ProfileUpdate>(initial);
+  const [form, setForm] = useState<ProfileUpdate>(() => {
+    const { name, summary, goal, constraints, notes } = initial;
+    return { name, summary, goal, constraints, notes };
+  });
   const [base, setBase] = useState<Profile>(initial);
   const { busy, error, run } = useAction();
   const dirty = form.name !== base.name || PROFILE_FIELDS.some((f) => form[f.key] !== base[f.key]);
