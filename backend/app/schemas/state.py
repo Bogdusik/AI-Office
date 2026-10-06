@@ -33,5 +33,12 @@ class FloorState(BaseModel):
     agents: list[AgentState]
 
 
+class WorldStats(BaseModel):
+    tasks_in_progress: int
+    awaiting_review: int
+    done_today: int
+
+
 class WorldState(BaseModel):
     floors: list[FloorState]
+    stats: WorldStats
