@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import { ApiStatus } from "@/components/hud/ApiStatus";
 import { Controls, PreviewBadge, WorldError } from "@/components/hud/Controls";
+import { Hotkeys } from "@/components/hud/Hotkeys";
 import { WorldSync } from "@/components/hud/WorldSync";
 import { SceneLoader } from "@/components/scene/SceneLoader";
 
@@ -10,6 +11,7 @@ export default function Home() {
       <Suspense fallback={null}>
         <WorldSync />
       </Suspense>
+      <Hotkeys />
       <SceneLoader />
       <div className="pointer-events-none absolute top-4 left-4 select-none">
         <p className="font-mono text-[10px] uppercase tracking-[0.25em] text-ink/45">Local HQ</p>

@@ -14,7 +14,7 @@ const floor = (number: number, kind: "reception" | "office", capacity: number, o
   kind,
   capacity,
   has_director_office: office,
-  agents: Array.from({ length: agents }, (_, i) => ({ id: number * 100 + i, deskIndex: i, roleKey: `r${number}${i}`, title: "T", present: true })),
+  agents: Array.from({ length: agents }, (_, i) => ({ id: number * 100 + i, deskIndex: i, roleKey: `r${number}${i}`, title: "T", present: true, status: "S", statusColor: "#000" })),
 });
 
 const standard = [floor(1, "reception", 0), floor(2, "office", 5, false, 4), floor(3, "office", 5, true, 2)];
@@ -108,6 +108,35 @@ for (const [label, floors, expectedSpots] of [
   check(`${label}: reception floor has no desks, office floors have kitchens`, () => {
     assert.equal(building.floors[0].capacity, 0);
     assert.ok(building.kitchenZone.x0 >= building.sideZone.x1);
+  });
+
+  check(`${label}: every agent, desk, spot and the director's office is pickable once`, () => {
+    const keys = scene.picks.map((p) => p.key);
+    assert.equal(new Set(keys).size, keys.length);
+    const desks = floors.reduce((n, f) => n + (f.kind === "office" ? f.capacity : 0), 0);
+    assert.equal(scene.picks.filter((p) => p.target.kind === "agent" || p.target.kind === "desk").length, desks);
+    for (const f of floors) for (const a of f.agents) assert.ok(keys.includes(`agent:${a.id}`), `agent ${a.id} pickable`);
+    assert.equal(scene.picks.filter((p) => p.target.kind === "spot").length, site.spots.length);
+    const director = scene.picks.filter((p) => p.target.kind === "director");
+    assert.equal(director.length, 1);
+    assert.equal(director[0].floorNumber, 3);
+  });
+
+  check(`${label}: hidden floors are not pickable`, () => {
+    const lower = buildScene(floors, (n) => n <= 2);
+    assert.ok(lower.picks.every((p) => p.floorNumber === null || p.floorNumber <= 2));
+    assert.equal(lower.picks.filter((p) => p.target.kind === "director").length, 0);
+    assert.equal(lower.picks.filter((p) => p.target.kind === "spot").length, site.spots.length);
+  });
+
+  check(`${label}: pick volumes sit inside their floor storey`, () => {
+    for (const p of scene.picks) {
+      if (p.floorNumber === null) continue;
+      const f = building.floors.find((x) => x.number === p.floorNumber)!;
+      const [, y] = p.box.position;
+      const h = p.box.size[1];
+      assert.ok(y - h / 2 >= f.baseY - 1e-6 && y + h / 2 <= f.baseY + building.pitch, `${p.key} within storey`);
+    }
   });
 }
 

@@ -12,7 +12,22 @@ function Board({ w, h, color, z = -0.03 }: { w: number; h: number; color: string
   );
 }
 
-function Plaque({ text }: { text: string }) {
+/** Title on top, status below; the left stripe carries the status colour. */
+function StatusCard({ w, h, font, text, status, statusColor }: { w: number; h: number; font: number; text: string; status: string; statusColor: string }) {
+  return (
+    <FaceCamera>
+      <Board w={w} h={h} color={PALETTE.plaque} z={0} />
+      <mesh position={[-w / 2 + 0.06, 0, 0.027]}>
+        <boxGeometry args={[0.12, h, 0.005]} />
+        <meshBasicMaterial color={statusColor} toneMapped={false} />
+      </mesh>
+      <Label text={text} position={[0.06, -h / 2 + font * 1.85, 0.03]} size={font} maxWidth={w - 0.4} color={PALETTE.plaqueText} anchorY="bottom" />
+      <Label text={status} position={[0.06, -h / 2 + font * 0.95, 0.03]} size={font * 0.8} maxWidth={w - 0.4} color={PALETTE.steel} />
+    </FaceCamera>
+  );
+}
+
+function Plaque(props: { text: string; status: string; statusColor: string }) {
   const { w, h, font } = DIM.plaque;
   return (
     <>
@@ -20,14 +35,7 @@ function Plaque({ text }: { text: string }) {
         <boxGeometry args={[0.03, 0.7, 0.03]} />
         <meshStandardMaterial color={PALETTE.metal} />
       </mesh>
-      <FaceCamera>
-        <Board w={w} h={h} color={PALETTE.plaque} z={0} />
-        <mesh position={[-w / 2 + 0.05, 0, 0.027]}>
-          <boxGeometry args={[0.1, h, 0.005]} />
-          <meshStandardMaterial color={PALETTE.dark} />
-        </mesh>
-        <Label text={text} position={[0.05, 0, 0.03]} size={font} maxWidth={w - 0.35} color={PALETTE.plaqueText} />
-      </FaceCamera>
+      <StatusCard w={w} h={h} font={font} {...props} />
     </>
   );
 }
@@ -40,7 +48,13 @@ export function SceneLabels({ labels }: { labels: LabelSpec[] }) {
           case "plaque":
             return (
               <group key={l.key} position={l.position}>
-                <Plaque text={l.text} />
+                <Plaque text={l.text} status={l.status} statusColor={l.statusColor} />
+              </group>
+            );
+          case "tag":
+            return (
+              <group key={l.key} position={l.position}>
+                <StatusCard w={DIM.plaque.w} h={DIM.plaque.h} font={DIM.plaque.font} text={l.text} status={l.status} statusColor={l.statusColor} />
               </group>
             );
           case "floorSign":

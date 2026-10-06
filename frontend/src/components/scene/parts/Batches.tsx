@@ -48,7 +48,7 @@ const FINISH: Record<Finish, FinishSpec> = {
   screen: { cast: false, receive: false, material: () => new MeshBasicMaterial({ toneMapped: false }) },
 };
 
-const nextCapacity = (n: number) => 2 ** Math.ceil(Math.log2(Math.max(16, n)));
+export const nextCapacity = (n: number) => 2 ** Math.ceil(Math.log2(Math.max(16, n)));
 
 function InstancedBatch({ shape, finish, parts }: { shape: Shape; finish: Finish; parts: Part[] }) {
   const ref = useRef<InstancedMesh>(null);
