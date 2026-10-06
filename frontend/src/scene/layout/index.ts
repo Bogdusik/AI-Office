@@ -5,5 +5,6 @@ export * from "./camera";
 export * from "./dims";
 export * from "./greenery";
 export * from "./models";
+export * from "./picks";
 export * from "./site";
 export * from "./types";

@@ -3,11 +3,13 @@
 import { Canvas, useThree } from "@react-three/fiber";
 import { Suspense, useMemo } from "react";
 import type { WorldState } from "@/lib/api";
-import { buildingLayout, cameraHome, rectCenter, rectSize, siteLayout } from "@/scene/layout";
+import { buildScene, buildingLayout, cameraHome, rectCenter, rectSize, siteLayout } from "@/scene/layout";
 import { PALETTE } from "@/scene/palette";
+import { isFloorVisible, useUiStore } from "@/store/useUiStore";
 import { useWorldStore } from "@/store/useWorldStore";
-import { Building } from "./Building";
+import { Building, toFloorData } from "./Building";
 import { CameraRig } from "./CameraRig";
+import { DevProbe } from "./DevProbe";
 
 const SUN_DIRECTION: [number, number, number] = [-0.45, 1, 0.65];
 const SUN_DISTANCE = 120;
@@ -18,6 +20,10 @@ function World({ world }: { world: WorldState }) {
     const b = buildingLayout(world.floors);
     return { building: b, site: siteLayout(b) };
   }, [world]);
+  const selected = useUiStore((s) => s.selectedFloor);
+  const preview = useUiStore((s) => s.preview);
+  const floors = useMemo(() => toFloorData(world, preview), [world, preview]);
+  const scene = useMemo(() => buildScene(floors, (n) => isFloorVisible(n, selected)), [floors, selected]);
   const viewport = useThree((s) => s.size);
   const home = useMemo(() => cameraHome(building, site, viewport), [building, site, viewport]);
   const [cx, cz] = rectCenter(site.focus);
@@ -26,7 +32,8 @@ function World({ world }: { world: WorldState }) {
 
   return (
     <>
-      <CameraRig home={home} />
+      <CameraRig home={home} picks={scene.picks} />
+      {process.env.NODE_ENV !== "production" && <DevProbe picks={scene.picks} />}
       <hemisphereLight args={["#fffdf8", "#e9e2d6", 2.2]} />
       <directionalLight
         position={[cx + SUN_DIRECTION[0] * SUN_DISTANCE, SUN_DIRECTION[1] * SUN_DISTANCE, cz + SUN_DIRECTION[2] * SUN_DISTANCE]}
@@ -49,7 +56,7 @@ function World({ world }: { world: WorldState }) {
         <meshStandardMaterial color={PALETTE.ground} roughness={1} />
       </mesh>
       <Suspense fallback={null}>
-        <Building world={world} homeZoom={home.zoom} />
+        <Building scene={scene} homeZoom={home.zoom} />
       </Suspense>
     </>
   );
@@ -57,6 +64,7 @@ function World({ world }: { world: WorldState }) {
 
 export function OfficeScene() {
   const world = useWorldStore((s) => s.world);
+  const select = useUiStore((s) => s.select);
 
   return (
     <Canvas
@@ -66,6 +74,9 @@ export function OfficeScene() {
       gl={{ antialias: true }}
       dpr={[1, 2]}
       onContextMenu={(e) => e.preventDefault()}
+      onPointerMissed={(e) => {
+        if (e.type === "click") select(null);
+      }}
     >
       <color attach="background" args={[PALETTE.sky]} />
       {world && <World world={world} />}

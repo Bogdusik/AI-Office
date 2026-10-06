@@ -2,7 +2,7 @@ import { Text } from "@react-three/drei";
 import { Suspense } from "react";
 import type { Vec3 } from "@/scene/layout";
 
-export const LABEL_FONT = "/fonts/Inter-SemiBold.woff";
+export const LABEL_FONT = "/fonts/Inter-SemiBold.ttf";
 
 type LabelProps = {
   text: string;
@@ -12,10 +12,11 @@ type LabelProps = {
   maxWidth?: number;
   rotation?: Vec3;
   anchorX?: "left" | "center" | "right";
+  anchorY?: "top" | "middle" | "bottom";
 };
 
 /** Each label suspends on its own, so font loading never blocks the building from rendering. */
-export function Label({ text, position, size, color, maxWidth, rotation, anchorX = "center" }: LabelProps) {
+export function Label({ text, position, size, color, maxWidth, rotation, anchorX = "center", anchorY = "middle" }: LabelProps) {
   return (
     <Suspense fallback={null}>
       <Text
@@ -26,7 +27,7 @@ export function Label({ text, position, size, color, maxWidth, rotation, anchorX
         color={color}
         maxWidth={maxWidth}
         anchorX={anchorX}
-        anchorY="middle"
+        anchorY={anchorY}
         textAlign="center"
         lineHeight={1.1}
       >
