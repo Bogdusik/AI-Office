@@ -52,9 +52,14 @@ Director actions: approve, request-changes (comment required), pause, resume, ca
 - `frontend/src/components/hud/` — DOM overlays (floor switcher, home, preview badge, API status)
 
 ## Scene
-- Floors stack by sorted `number` with an air gap (`DIM.floorGap`) so lower floors stay visible from the iso camera; the core (elevator + stairs) and corner columns tie them together. Near walls (+x, +z) are omitted.
+- Floor plan zones: desk grid (from `capacity`), side zone (director office or lounge), and on the ground floor only a front lobby strip (reception, waiting area) with full-height glass doors, canopy and card reader.
+- Floors stack by sorted `number`. The slab pitch comes from `floorPitch()`: just enough air so every back-row plaque of a lower floor is visible from the home camera.
+- Core on the −x side: glass elevator shaft in front (landing doors on the building's inner wall), switchback stairs with landings and rails behind it.
+- Walls exist on all four sides and fade when they face the camera (`facadeOpacity` + `parts/Fade`), damped per frame, no React re-renders. Entrance doors/canopy never fade.
+- Labels and plaques turn to the camera around Y (`parts/FaceCamera`); don't use drei `Billboard` with locked axes — it flips when the camera is behind.
 - Agent + their car are shown only when `status !== 'off_site'`, or always with `?preview=1` (UI-only, never writes to the DB).
-- Parking: one spot per active agent (sorted by id) + spot 0 for the director.
+- Parking: spot 0 director, then one spot per desk (floor order, `desk_index`), then 2 guest spots; separate entry/exit lanes with barriers.
+- Camera: drei `CameraControls` (orthographic). Left drag rotates 360° (polar clamped 15–75°), right drag pans (target clamped around the building), wheel zooms smoothly to the cursor; "home" animates back to `cameraHome()`.
 - Labels use a local font (`public/fonts/Inter-SemiBold.woff`), each wrapped in its own Suspense.
 
 ## Rules
