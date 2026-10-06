@@ -1,7 +1,8 @@
 import { create } from "zustand";
-import { fetchState, type AgentState, type WorldState } from "@/lib/api";
+import { fetchState, type WorldState } from "@/lib/api";
 
-export const WORLD_POLL_MS = 3000;
+/** Fallback only: server-sent events trigger refreshes as things happen. */
+export const WORLD_POLL_MS = 15000;
 
 type LoadStatus = "loading" | "ok" | "error";
 
@@ -50,7 +51,3 @@ export const useWorldStore = create<WorldStore>((set, get) => ({
     };
   },
 }));
-
-export function isPresent(agent: AgentState, preview: boolean): boolean {
-  return preview || agent.status !== "off_site";
-}

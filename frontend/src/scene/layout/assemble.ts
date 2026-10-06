@@ -32,7 +32,7 @@ import { type Routes, type SiteLayout, routes, siteLayout } from "./site";
 import { type Box, type FloorInput, type Part, type Placement, type Rect, type Vec3, boxIn, cube, part, place, rectCenter, rectSize } from "./types";
 
 /** `status`/`statusColor` arrive already localised: the layout only places them. */
-export type AgentInput = { id: number; deskIndex: number; roleKey: string; title: string; present: boolean; status: string; statusColor: string };
+export type AgentInput = { id: number; deskIndex: number; roleKey: string; title: string; atDesk: boolean; carParked: boolean; status: string; statusColor: string };
 export type FloorData = FloorInput & { id: number; name: string; agents: AgentInput[] };
 
 export type LabelSpec =
@@ -71,10 +71,10 @@ function workstations(floor: FloorData, f: FloorLayout, parts: Part[], labels: L
     const t = deskTransform(i);
     const agent = byDesk.get(i);
     const [dx, , dz] = t.desk;
-    parts.push(...place(M.workstation(agent !== undefined, agent?.present ?? false), at(dx, f.baseY, dz)));
+    parts.push(...place(M.workstation(agent !== undefined, agent?.atDesk ?? false), at(dx, f.baseY, dz)));
     picks.push(deskPick(f, i, agent ? { kind: "agent", id: agent.id } : { kind: "desk", floorId: floor.id, deskIndex: i }));
     if (!agent) continue;
-    if (agent.present) parts.push(...place(M.seatedPerson(outfitColor(agent.roleKey)), at(t.seat[0], f.baseY + t.seat[1], t.seat[2])));
+    if (agent.atDesk) parts.push(...place(M.seatedPerson(outfitColor(agent.roleKey)), at(t.seat[0], f.baseY + t.seat[1], t.seat[2])));
     labels.push({ kind: "plaque", key: `plaque-${agent.id}`, position: [t.plaque[0], f.baseY + t.plaque[1], t.plaque[2]], text: agent.title, status: agent.status, statusColor: agent.statusColor });
   }
 }
@@ -357,7 +357,7 @@ export function buildScene(floors: readonly FloorData[], visible: (floorNumber: 
   picks.push(...site.spots.map(spotPick));
   for (const f of building.floors) {
     for (const a of byNumber.get(f.number)?.agents ?? []) {
-      if (!a.present) continue;
+      if (!a.carParked) continue;
       const spot = site.spots[site.deskSpot(f.index, a.deskIndex)];
       if (!spot) continue;
       parts.push(...place(M.car(carColor(a.roleKey)), { position: spot.center, yaw: spot.yaw }));

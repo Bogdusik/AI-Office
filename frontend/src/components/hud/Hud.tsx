@@ -7,6 +7,7 @@ import { ApiStatus } from "./ApiStatus";
 import { FloorControls, PreviewBadge } from "./Controls";
 import { ListDock } from "./ListDock";
 import { Metrics } from "./Metrics";
+import { Notices } from "./Notices";
 import { Search } from "./Search";
 import { StageRibbon } from "./StageRibbon";
 
@@ -56,10 +57,13 @@ export function Hud() {
         <div className="flex min-w-0 flex-1 justify-center">
           <Search />
         </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <PreviewBadge />
-          <ApiStatus />
-          <DirectorButton />
+        <div className="flex shrink-0 flex-col items-end gap-3">
+          <div className="flex items-center gap-2">
+            <PreviewBadge />
+            <ApiStatus />
+            <DirectorButton />
+          </div>
+          <Notices />
         </div>
       </div>
 

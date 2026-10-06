@@ -4,7 +4,7 @@
  */
 import assert from "node:assert/strict";
 import { RIBBON, ribbonState } from "@/lib/stages";
-import { MAP_EDGES, type Vec3, buildScene, inRect, routeGraph } from "@/scene/layout";
+import { MAP_EDGES, type Vec3, buildScene, inRect, presence, routeGraph } from "@/scene/layout";
 
 type FloorFixture = Parameters<typeof buildScene>[0][number];
 
@@ -15,7 +15,7 @@ const floor = (number: number, kind: "reception" | "office", capacity: number, o
   kind,
   capacity,
   has_director_office: office,
-  agents: Array.from({ length: agents }, (_, i) => ({ id: number * 100 + i, deskIndex: i, roleKey: `r${number}${i}`, title: "T", present: true, status: "S", statusColor: "#000" })),
+  agents: Array.from({ length: agents }, (_, i) => ({ id: number * 100 + i, deskIndex: i, roleKey: `r${number}${i}`, title: "T", atDesk: true, carParked: true, status: "S", statusColor: "#000" })),
 });
 
 const standard = [floor(1, "reception", 0), floor(2, "office", 5, false, 4), floor(3, "office", 5, true, 2)];
@@ -140,6 +140,24 @@ for (const [label, floors, expectedSpots] of [
     }
   });
 }
+
+check("presence follows the agent status; preview shows everyone", () => {
+  const seen = (["off_site", "arriving", "idle", "working", "waiting_review", "leaving"] as const).map((s) => {
+    const p = presence(s, false);
+    return `${s}:${p.carParked ? "car" : "-"}${p.atDesk ? "+desk" : ""}`;
+  });
+  assert.deepEqual(seen, ["off_site:-", "arriving:car", "idle:car+desk", "working:car+desk", "waiting_review:car+desk", "leaving:car"]);
+  assert.deepEqual(presence("off_site", true), { atDesk: true, carParked: true });
+});
+
+check("cars and people follow presence in the scene", () => {
+  const f = floor(2, "office", 5, false, 2);
+  f.agents[0] = { ...f.agents[0], atDesk: false, carParked: true };
+  f.agents[1] = { ...f.agents[1], atDesk: false, carParked: false };
+  const scene = buildScene([floor(1, "reception", 0), f], () => true);
+  const tags = scene.labels.filter((l) => l.kind === "tag").map((l) => l.key);
+  assert.deepEqual(tags, [`car-${f.agents[0].id}`]);
+});
 
 check("stage ribbon follows the task lifecycle", () => {
   assert.equal(RIBBON.length, 7);
