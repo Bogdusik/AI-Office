@@ -1,6 +1,6 @@
 # AI Office
 
-Local 3D office where AI agents are the staff. Stage 1: scaffold.
+Local 3D office where AI agents are the staff. Stage 2: data model and API.
 
 ## Requirements
 - Docker Desktop
@@ -19,8 +19,9 @@ cd backend
 Copy-Item .env.example .env          # use the same password in DATABASE_URL
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
+pip install -r requirements-dev.txt
 alembic upgrade head
+python -m app.seed                   # safe to re-run
 uvicorn app.main:app --reload --port 8000
 
 # 3. Frontend (new terminal)
@@ -40,7 +41,19 @@ cd frontend; npm run dev
 
 ## Check
 - `Invoke-RestMethod http://localhost:8000/health` → `{"status":"ok","db":true}`
+- `Invoke-RestMethod http://localhost:8000/api/v1/state` → 2 floors, 6 agents
+- API docs: http://localhost:8000/docs
 - http://localhost:3000 → scene with a cube and "API: ok" in the top-right corner
+
+## Tests
+
+```powershell
+cd backend
+.\.venv\Scripts\Activate.ps1
+pytest
+```
+
+Tests use `TEST_DATABASE_URL` from `backend/.env` (database `ai_office_test` in the same container). It is dropped, recreated and migrated on every run — never point it at real data.
 
 ## Ports
 | Service  | Port |
