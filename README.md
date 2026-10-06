@@ -1,6 +1,6 @@
 # AI Office
 
-Local 3D office where AI agents are the staff. Stage 4: the building from `GET /api/v1/state` with selection, panels and a HUD (no task executor yet — tasks stay queued).
+Local 3D office where AI agents are the staff. Stage 5: the building from `GET /api/v1/state` with selection, panels and a HUD; a background executor drives agents (arrive → work through stages → review → leave) with placeholder results, live over server-sent events.
 
 
 Controls: left drag — rotate, right drag — pan, wheel — zoom to cursor, «Домой» — back to the default view.
@@ -28,7 +28,7 @@ python -m venv .venv
 pip install -r requirements-dev.txt
 alembic upgrade head
 python -m app.seed                   # safe to re-run
-uvicorn app.main:app --reload --port 8000
+uvicorn app.main:app --reload --port 8000 --timeout-graceful-shutdown 2
 
 # 3. Frontend (new terminal)
 cd frontend
@@ -41,9 +41,11 @@ npm run dev
 
 ```powershell
 docker compose up -d
-cd backend; .\.venv\Scripts\Activate.ps1; uvicorn app.main:app --reload --port 8000
+cd backend; .\.venv\Scripts\Activate.ps1; uvicorn app.main:app --reload --port 8000 --timeout-graceful-shutdown 2
 cd frontend; npm run dev
 ```
+
+The task executor starts with the backend. Its timings live in `backend/.env` (`EXECUTOR_ARRIVE_SECONDS`, `EXECUTOR_STAGE_SECONDS`, `EXECUTOR_DEPART_SECONDS`, 5 s each by default); `EXECUTOR_ENABLED=false` turns it off. `--timeout-graceful-shutdown 2` lets the server reload while browsers hold the `/api/v1/events` stream open.
 
 ## Check
 - `Invoke-RestMethod http://localhost:8000/health` → `{"status":"ok","db":true}`
