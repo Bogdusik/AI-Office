@@ -8,8 +8,8 @@ State lives in the database; the 3D scene only renders it. No business logic in 
 ## Stages
 1. Scaffold — done
 2. Data model and API — done
-3. Static building  ← **current**
-4. Clicks and panels
+3. Static building — done
+4. Clicks and panels  ← **current**
 5. Tasks with a fake executor
 6. Real AI via Ollama + web search
 7. Life animation
@@ -33,7 +33,7 @@ Task status flow (enforced in `app/services/rules.py`, anything else → 409):
 `queued → in_progress → needs_review → done`, `needs_review → changes_requested → in_progress`, `in_progress ↔ paused`, `in_progress → failed`, any unfinished → `cancelled`.
 Director actions: approve, request-changes (comment required), pause, resume, cancel. `start`/`submit_for_review`/`fail` are executor-only service functions (no HTTP yet).
 
-`GET /api/v1/state` is the scene's single snapshot: floors → active agents with `current_task` (priority in_progress > changes_requested > paused > needs_review), `queue_length`, `awaiting_review`.
+`GET /api/v1/state` is the scene's single snapshot: floors → active agents with `current_task` (priority in_progress > changes_requested > paused > needs_review), `queue_length`, `awaiting_review`; plus `stats` (`tasks_in_progress`, `awaiting_review` over active agents, `done_today` = tasks done since local midnight of the server).
 
 ## Layout
 - `backend/app/core/config.py` — settings from `backend/.env`
@@ -43,16 +43,21 @@ Director actions: approve, request-changes (comment required), pause, resume, ca
 - `backend/app/api/v1/` — thin routers under `/api/v1`
 - `backend/app/seed/` — idempotent seed (`python -m app.seed`), never overwrites existing rows
 - `backend/tests/` — pytest on a separate `ai_office_test` DB, recreated and migrated each run
-- `frontend/src/lib/api.ts` — `WorldState` types (mirror `backend/app/schemas/state.py`) + `fetchState`
+- `frontend/src/lib/api.ts` — API types (mirror backend schemas) + `api.*` calls; non-2xx → `ApiError`
+- `frontend/src/lib/errors.ts` — `humanize()`: backend 409/422/404 details → Russian text for the director
+- `frontend/src/lib/labels.ts` — Russian names + colours of agent/task statuses and stages; `lib/stages.ts` — stage ribbon mapping
 - `frontend/src/store/useWorldStore.ts` — polls `/api/v1/state` every 3 s; only replaces `world` when the payload changed
-- `frontend/src/store/useUiStore.ts` — UI-only state: selected floor, `?preview=1`, camera "home" requests
+- `frontend/src/store/useTasksStore.ts` — all tasks (`GET /tasks`), reloaded when `world` changes or after an action, not every poll
+- `frontend/src/store/actions.ts` — `mutate()`: every write refreshes world + tasks right away (also on error) and bumps `revision` so open details refetch
+- `frontend/src/store/useUiStore.ts` — UI-only state: selected floor, `?preview=1`, camera home/focus requests, selection, hover, open task, director panel, collapsed HUD blocks; `back()` = Esc
 - `frontend/src/scene/layout/` — **all** scene geometry as pure functions (import as `@/scene/layout`):
   `types` (Part, place), `dims` (DIM, CAMERA, FADE), `models` (primitive furniture/cars/trees as parts), `building` (floors, zones, walls, core, stairs, entrance, roof),
-  `site` (roads, intersection, parking, fence, car route graph), `greenery`, `camera` (home view, wall/roof fading), `assemble` (`buildScene` → parts, walls, labels, roof, routes)
-- `frontend/scripts/check-layout.mts` — `npm run check:layout`: parking/route invariants of the pure layout (no test runner)
+  `site` (roads, intersection, parking, fence, car route graph), `greenery`, `camera` (home view, wall/roof fading), `picks` (selection keys + click volumes), `assemble` (`buildScene` → parts, walls, labels, roof, routes, picks)
+- `frontend/scripts/check-layout.mts` — `npm run check:layout`: parking/route/pick invariants of the pure layout + stage ribbon (no test runner)
 - `frontend/src/scene/palette.ts` — colours; one accent (`#ff7a59`) for director-related things
 - `frontend/src/components/scene/` — R3F scene from primitives (render only, reads stores)
-- `frontend/src/components/hud/` — DOM overlays (floor switcher, home, preview badge, API status)
+- `frontend/src/components/hud/` — HUD overlay (`Hud` frame: metrics, floors, search, director button | stage ribbon, office list), Esc hotkey
+- `frontend/src/components/panels/` — right panels (agent, task card, hire, parking spot) and the full-screen director panel; `ui.tsx` shared primitives
 
 ## Scene
 - Office floors: desk grid (from `capacity`; desk with 2 monitors, speakers, bottle, executive chair), side zone (director office or lounge), kitchen zone. The reception floor has no desks: two-seat counter with two static staff figures (decor, not agents), guest seating groups, big glass doors with canopy and card reader.
@@ -66,7 +71,14 @@ Director actions: approve, request-changes (comment required), pause, resume, ca
 - Agent + their car are shown only when `status !== 'off_site'`, or always with `?preview=1` (UI-only, never writes to the DB).
 - Parking: spot 0 director, then one spot per desk (floor order, `desk_index`), then 2 guest spots; separate entry/exit lanes with barriers; perimeter fence with a gap at the lanes.
 - Camera: drei `CameraControls` (orthographic). Left drag rotates 360° (polar clamped 15–75°), right drag pans (target clamped to the whole site), wheel zooms smoothly to the cursor; "home" animates back to `cameraHome()`.
-- Labels use a local font (`public/fonts/Inter-SemiBold.woff`), each wrapped in its own Suspense.
+- Labels use a local font with Cyrillic (`public/fonts/Inter-SemiBold.ttf`), each wrapped in its own Suspense. Plaques and car tags show title + status (stripe = status colour).
+
+## Selection and panels (stage 4)
+- Clickable: agent (whole workstation), free desk, director office, parking spot. `buildScene` returns `picks` (invisible boxes); `parts/Picking` is one instanced hit mesh, `parts/Highlight` draws hover/selection frames. Clicks after a drag (>4 px) are ignored; a click on nothing clears the selection.
+- The scene only reads selection from `useUiStore`. `focusOn()` (HUD list, search, director table) also switches to the object's floor and asks `CameraRig` to glide there (same angle, closer zoom).
+- Right panel: agent (tasks grouped: current, queue, review, finished; new task form; edit; archive with confirm), task card (actions by status, mirroring `rules.py`), hire on a free desk, parking spot. Director panel: team table, review queue, profile, floors (delete only empty office floors without the director office — UI rule).
+- HUD rows stop short of the right panel (`useRightPanelOpen`); desktop only, no mobile layout.
+- Dev-only `window.__aiOffice.screenOf(key)` gives page coordinates of a pick, so browser tests click real objects.
 
 ## Rules
 - Secrets only in `.env` files (git-ignored); keep `.env.example` in sync.
