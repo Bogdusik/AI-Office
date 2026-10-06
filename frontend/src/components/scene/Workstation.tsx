@@ -2,6 +2,7 @@ import type { AgentState } from "@/lib/api";
 import { DIM, deskTransform } from "@/scene/layout";
 import { PALETTE, outfitColor } from "@/scene/palette";
 import { AgentFigure } from "./AgentFigure";
+import { FaceCamera } from "./parts/FaceCamera";
 import { Block } from "./parts/Block";
 import { Label } from "./parts/Label";
 
@@ -15,6 +16,7 @@ export function Workstation({ deskIndex, agent, present }: Props) {
   const fade = occupied ? 1 : 0.45;
   const top = occupied ? PALETTE.deskTop : PALETTE.free;
   const frame = occupied ? PALETTE.wood : PALETTE.free;
+  const seatColor = occupied ? PALETTE.chair : PALETTE.free;
   const [dx, , dz] = t.desk;
   const [mx, my, mz] = t.monitor;
   const [cx, cy, cz] = t.chair;
@@ -45,15 +47,17 @@ export function Workstation({ deskIndex, agent, present }: Props) {
       )}
 
       <Block position={[cx, cy + 0.22, cz]} size={[0.06, 0.44, 0.06]} color={PALETTE.metal} opacity={fade} />
-      <Block position={[cx, cy + DIM.chair.seat - 0.04, cz]} size={[0.5, 0.08, 0.48]} color={occupied ? PALETTE.chair : PALETTE.free} opacity={fade} />
-      <Block position={[cx, cy + DIM.chair.seat + 0.3, cz + 0.22]} size={[0.5, 0.52, 0.06]} color={occupied ? PALETTE.chair : PALETTE.free} opacity={fade} />
+      <Block position={[cx, cy + DIM.chair.seat - 0.04, cz]} size={[0.5, 0.08, 0.48]} color={seatColor} opacity={fade} />
+      <Block position={[cx, cy + DIM.chair.seat + 0.3, cz + 0.22]} size={[0.5, 0.52, 0.06]} color={seatColor} opacity={fade} />
 
       {occupied && (
-        <group position={t.plaque} rotation-y={t.plaqueYaw}>
-          <Block position={[0, ph / 2 + 0.3, 0]} size={[0.025, 0.6, 0.025]} color={PALETTE.metal} castShadow={false} />
-          <Block position={[0, 0, 0]} size={[pw, ph, 0.05]} color={PALETTE.plaque} />
-          <Block position={[-pw / 2 + 0.04, 0, 0.027]} size={[0.08, ph, 0.005]} color={PALETTE.dark} castShadow={false} />
-          <Label text={agent.title} position={[0.04, 0, 0.03]} size={0.17} maxWidth={pw - 0.25} color={PALETTE.plaqueText} />
+        <group position={t.plaque}>
+          <Block position={[0, ph / 2 + 0.35, 0]} size={[0.03, 0.7, 0.03]} color={PALETTE.metal} castShadow={false} />
+          <FaceCamera>
+            <Block position={[0, 0, 0]} size={[pw, ph, 0.05]} color={PALETTE.plaque} />
+            <Block position={[-pw / 2 + 0.05, 0, 0.027]} size={[0.1, ph, 0.005]} color={PALETTE.dark} castShadow={false} />
+            <Label text={agent.title} position={[0.05, 0, 0.03]} size={DIM.plaque.font} maxWidth={pw - 0.35} color={PALETTE.plaqueText} />
+          </FaceCamera>
         </group>
       )}
 

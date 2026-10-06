@@ -1,21 +1,28 @@
 import { hashString } from "@/scene/layout";
 
+const GROUND = "#f1ede5";
+
 export const PALETTE = {
-  sky: "#eef0ee",
-  ground: "#f1ede5",
-  grass: "#d5dccb",
+  /** Scene background equals the ground so the horizon never shows. */
+  sky: GROUND,
+  ground: GROUND,
   slab: "#f6f3ee",
   slabEdge: "#d9d2c5",
   wall: "#ebe6dd",
   glass: "#bcd3dd",
   wood: "#c8b69a",
+  darkWood: "#9c8064",
   deskTop: "#efe9df",
   metal: "#9aa1a9",
+  steel: "#6f7680",
   dark: "#2d323b",
   screen: "#3d4a5c",
   screenOn: "#9fc6d8",
   chair: "#5b6370",
   free: "#d7d2c9",
+  fabric: "#c9c4bb",
+  fabricDark: "#a9a49b",
+  rug: "#e9ddd2",
   plaque: "#fbfaf7",
   plaqueText: "#2d323b",
   core: "#dcd6cb",
@@ -25,7 +32,13 @@ export const PALETTE = {
   asphalt: "#b4b7bb",
   curb: "#d6d1c6",
   plant: "#7f9b78",
+  leaf: ["#8faa7f", "#7d9a72", "#9bb08a"],
+  conifer: "#6f8c6a",
+  bush: "#86a079",
+  soil: "#9b8a73",
+  flowers: ["#e8c9c0", "#d9c8e3", "#f0dfb8", "#ffffff"],
   pot: "#b9a68b",
+  trunk: "#a08a70",
   skin: "#e2c4a8",
   accent: "#ff7a59",
 } as const;

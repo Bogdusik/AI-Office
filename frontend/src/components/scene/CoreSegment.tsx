@@ -1,57 +1,83 @@
-import { DIM, type CoreLayout, type Rect, rectCenter, rectSize, stairSteps, storeyHeight } from "@/scene/layout";
+import {
+  DIM,
+  type BuildingLayout,
+  type CoreLayout,
+  boxIn,
+  rectCenter,
+  rectSize,
+  stairStorey,
+  storeyHeight,
+} from "@/scene/layout";
 import { PALETTE } from "@/scene/palette";
-import { Block } from "./parts/Block";
+import { FaceCamera } from "./parts/FaceCamera";
+import { Block, Boxes } from "./parts/Block";
+import { Fade } from "./parts/Fade";
 import { Label } from "./parts/Label";
 
 type Props = {
-  core: Rect;
-  layout: CoreLayout;
+  building: BuildingLayout;
+  core: CoreLayout;
   floorIndex: number;
   floorNumber: number;
   floorName: string;
   isTop: boolean;
 };
 
-/** One storey of the elevator + stairs core, floor-local (y = 0 is the slab top). */
-export function CoreSegment({ core, layout, floorIndex, floorNumber, floorName, isTop }: Props) {
-  const [ccx, ccz] = rectCenter(core);
-  const [cw, cd] = rectSize(core);
-  const [sx, sz] = rectCenter(layout.shaft);
-  const [sw, sd] = rectSize(layout.shaft);
-  const h = storeyHeight(isTop);
-  const t = DIM.wall;
-  const slabRect = floorIndex === 0 ? core : { ...core, z1: layout.shaft.z1 + 0.2 };
-  const [slx, slz] = rectCenter(slabRect);
-  const [slw, sld] = rectSize(slabRect);
+/** One storey of the core, floor-local (y = 0 is the slab top): glass elevator shaft in front, stairs behind. */
+export function CoreSegment({ building, core, floorIndex, floorNumber, floorName, isTop }: Props) {
+  const h = storeyHeight(building, isTop);
+  const { shaft, stairwell } = core;
+  const [sx, sz] = rectCenter(shaft);
+  const [sw, sd] = rectSize(shaft);
+  const shaftH = h - DIM.slab;
+  const stairs = isTop ? null : stairStorey(stairwell, building.pitch);
+  const topLanding = boxIn({ ...stairwell, z0: stairwell.z1 - DIM.core.landing }, -DIM.slab, 0);
 
   return (
     <group>
-      <Block position={[slx, -DIM.slab / 2, slz]} size={[slw, DIM.slab, sld]} color={PALETTE.core} />
-      <Block position={[core.x0 + t / 2, h / 2 - DIM.slab, ccz]} size={[t, h, cd]} color={PALETTE.core} />
-      <Block position={[ccx, h / 2 - DIM.slab, core.z0 + t / 2]} size={[cw, h, t]} color={PALETTE.core} />
+      <Block position={[sx, -DIM.slab / 2, sz]} size={[sw + 0.3, DIM.slab, sd + 0.3]} color={PALETTE.core} />
 
-      <Block position={[sx, h / 2 - DIM.slab / 2, sz]} size={[sw, h - DIM.slab, sd]} color={PALETTE.shaftGlass} opacity={0.4} />
-      {[layout.shaft.x0, layout.shaft.x1].map((x) => (
-        <Block key={x} position={[x, h / 2 - DIM.slab / 2, layout.shaft.z1]} size={[0.08, h - DIM.slab, 0.08]} color={PALETTE.metal} />
-      ))}
+      <Block position={[sx, shaftH / 2, sz]} size={[sw, shaftH, sd]} color={PALETTE.shaftGlass} opacity={0.3} />
+      {[shaft.x0, shaft.x1].flatMap((x) =>
+        [shaft.z0, shaft.z1].map((z) => (
+          <Block key={`${x}:${z}`} position={[x, shaftH / 2, z]} size={[0.1, shaftH, 0.1]} color={PALETTE.steel} />
+        )),
+      )}
+      <Block position={[sx, 0.05, sz]} size={[sw, 0.1, sd]} color={PALETTE.steel} />
       {floorIndex === 0 && (
-        <Block position={[sx, 1.15, sz]} size={[sw - 0.3, 2.3, sd - 0.3]} color={PALETTE.metal} />
+        <group>
+          <Block position={[sx, 1.2, sz]} size={[sw - 0.3, 2.4, sd - 0.3]} color={PALETTE.metal} opacity={0.85} />
+          <Block position={[sx, 2.45, sz]} size={[sw - 0.25, 0.1, sd - 0.25]} color={PALETTE.steel} />
+        </group>
       )}
 
-      {!isTop &&
-        stairSteps(layout.stairs, floorIndex).map((step, i) => (
-          <Block key={i} position={step.position} size={step.size} color={PALETTE.slabEdge} />
-        ))}
+      {stairs ? (
+        <group>
+          <Boxes boxes={stairs.steps} color={PALETTE.slabEdge} />
+          <Boxes boxes={stairs.landings} color={PALETTE.core} />
+          <Boxes boxes={stairs.rails} color={PALETTE.steel} castShadow={false} />
+          <Boxes boxes={stairs.posts} color={PALETTE.steel} castShadow={false} />
+        </group>
+      ) : (
+        <Block position={topLanding.position} size={topLanding.size} color={PALETTE.core} />
+      )}
 
-      <group position={[layout.sign[0] + 0.55, 2.2, layout.sign[2]]}>
-        <Block position={[0, 0, -0.03]} size={[0.8, 0.8, 0.04]} color={PALETTE.dark} castShadow={false} />
-        <Label text={String(floorNumber)} position={[0, 0.04, 0]} size={0.46} color="#ffffff" />
-        <Label text={floorName} position={[0.55, 0, 0]} size={0.22} color={PALETTE.dark} anchorX="left" />
+      {core.walls.map((wall) => {
+        const b = boxIn(wall.box, -DIM.slab, h - DIM.slab);
+        return (
+          <Fade key={wall.key} normal={wall.normal}>
+            <Block position={b.position} size={b.size} color={PALETTE.core} />
+          </Fade>
+        );
+      })}
+
+      <group position={core.sign}>
+        <FaceCamera>
+          <Block position={[0, 0, -0.03]} size={[0.95, 0.95, 0.05]} color={PALETTE.dark} castShadow={false} />
+          <Label text={String(floorNumber)} position={[0, 0.03, 0]} size={0.56} color="#ffffff" />
+          <Label text={floorName} position={[-0.65, 0, 0]} size={0.3} color={PALETTE.dark} anchorX="right" />
+        </FaceCamera>
       </group>
-
-      {isTop && (
-        <Block position={[ccx, h - DIM.slab + 0.45, ccz]} size={[cw, 0.9, cd]} color={PALETTE.core} />
-      )}
     </group>
   );
 }
