@@ -4,6 +4,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Agent, Floor
+from app.models.enums import FloorKind
 from app.schemas.floor import FloorCreate, FloorUpdate
 from app.services import rules
 from app.services.errors import ConflictError, NotFoundError
@@ -43,9 +44,24 @@ async def _ensure_number_free(
         raise ConflictError(f"Floor number {number} is already taken")
 
 
+async def _ensure_single_reception(
+    session: AsyncSession, kind: FloorKind, exclude_id: int | None = None
+) -> None:
+    if kind != FloorKind.RECEPTION:
+        return
+    stmt = select(Floor.id).where(Floor.kind == FloorKind.RECEPTION)
+    if exclude_id is not None:
+        stmt = stmt.where(Floor.id != exclude_id)
+    if await session.scalar(stmt) is not None:
+        raise ConflictError("The building already has a reception floor")
+
+
 async def create_floor(session: AsyncSession, data: FloorCreate) -> Floor:
+    capacity = data.capacity if data.capacity is not None else rules.default_capacity(data.kind)
+    rules.ensure_capacity_matches_kind(data.kind, capacity)
     await _ensure_number_free(session, data.number)
-    floor = Floor(**data.model_dump())
+    await _ensure_single_reception(session, data.kind)
+    floor = Floor(**data.model_dump(exclude={"capacity"}), capacity=capacity)
     session.add(floor)
     await session.commit()
     await session.refresh(floor)
@@ -57,6 +73,12 @@ async def update_floor(session: AsyncSession, floor_id: int, data: FloorUpdate) 
     changes = data.changes()
     if "number" in changes and changes["number"] != floor.number:
         await _ensure_number_free(session, changes["number"], exclude_id=floor.id)
+    kind = changes.get("kind", floor.kind)
+    if "kind" in changes and kind != floor.kind:
+        rules.ensure_floor_empty(await count_active_agents(session, floor.id))
+        await _ensure_single_reception(session, kind, exclude_id=floor.id)
+        changes.setdefault("capacity", rules.default_capacity(kind))
+    rules.ensure_capacity_matches_kind(kind, changes.get("capacity", floor.capacity))
     if "capacity" in changes:
         active = await count_active_agents(session, floor.id)
         rules.ensure_capacity_fits(active, changes["capacity"])

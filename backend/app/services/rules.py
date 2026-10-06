@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol, TypeVar
 
-from app.models.enums import TaskStatus
+from app.models.enums import FloorKind, TaskStatus
 from app.services.errors import ConflictError, ValidationFailedError
 
 TERMINAL_STATUSES: frozenset[TaskStatus] = frozenset(
@@ -67,6 +67,25 @@ def transition_timestamps(
     if target in TERMINAL_STATUSES:
         finished_at = now
     return Timestamps(started_at=started_at, finished_at=finished_at)
+
+
+DEFAULT_CAPACITY: dict[FloorKind, int] = {FloorKind.OFFICE: 5, FloorKind.RECEPTION: 0}
+
+
+def default_capacity(kind: FloorKind) -> int:
+    return DEFAULT_CAPACITY[kind]
+
+
+def ensure_capacity_matches_kind(kind: FloorKind, capacity: int) -> None:
+    if kind == FloorKind.RECEPTION and capacity != 0:
+        raise ValidationFailedError("A reception floor has no desks: capacity must be 0")
+    if kind == FloorKind.OFFICE and capacity <= 0:
+        raise ValidationFailedError("An office floor needs at least one desk: capacity must be > 0")
+
+
+def ensure_floor_accepts_agents(kind: FloorKind) -> None:
+    if kind != FloorKind.OFFICE:
+        raise ConflictError("Agents can only work on office floors")
 
 
 def ensure_floor_has_room(active_agents: int, capacity: int) -> None:

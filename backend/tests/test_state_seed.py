@@ -17,9 +17,9 @@ async def test_seed_is_idempotent(db: AsyncSession) -> None:
     first = await run_seed(db)
     second = await run_seed(db)
 
-    assert len(first.created) == 1 + 2 + 6
+    assert len(first.created) == 1 + 3 + 6
     assert second.created == []
-    assert (await _count(db, Profile), await _count(db, Floor), await _count(db, Agent)) == (1, 2, 6)
+    assert (await _count(db, Profile), await _count(db, Floor), await _count(db, Agent)) == (1, 3, 6)
 
 
 async def test_seed_does_not_overwrite_or_resurrect(client: AsyncClient, db: AsyncSession) -> None:
@@ -52,18 +52,21 @@ async def test_state_after_seed(client: AsyncClient, db: AsyncSession) -> None:
     assert res.status_code == 200
     floors = res.json()["floors"]
 
-    assert [(f["number"], f["name"], f["has_director_office"]) for f in floors] == [
-        (1, "Career", False),
-        (2, "Engineering", True),
+    assert [(f["number"], f["name"], f["kind"], f["capacity"], f["has_director_office"]) for f in floors] == [
+        (1, "Reception", "reception", 0, False),
+        (2, "Career", "office", 5, False),
+        (3, "Engineering", "office", 5, True),
     ]
-    assert [a["role_key"] for a in floors[0]["agents"]] == [
+    assert floors[0]["agents"] == []
+    assert sum(len(f["agents"]) for f in floors) == 6
+    assert [a["role_key"] for a in floors[1]["agents"]] == [
         "job_search",
         "hackernoon_writer",
         "portfolio_evidence",
         "goals_strategist",
     ]
-    assert [a["role_key"] for a in floors[1]["agents"]] == ["code_reviewer", "interview_coach"]
-    for agent in floors[0]["agents"] + floors[1]["agents"]:
+    assert [a["role_key"] for a in floors[2]["agents"]] == ["code_reviewer", "interview_coach"]
+    for agent in floors[1]["agents"] + floors[2]["agents"]:
         assert agent["status"] == "off_site"
         assert agent["current_task"] is None
         assert (agent["queue_length"], agent["awaiting_review"]) == (0, 0)

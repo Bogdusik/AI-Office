@@ -1,6 +1,6 @@
 from pydantic import BaseModel
 
-from app.models.enums import AgentStatus, TaskStage, TaskStatus
+from app.models.enums import AgentStatus, FloorKind, TaskStage, TaskStatus
 
 
 class CurrentTask(BaseModel):
@@ -27,6 +27,7 @@ class FloorState(BaseModel):
     id: int
     number: int
     name: str
+    kind: FloorKind
     capacity: int
     has_director_office: bool
     agents: list[AgentState]

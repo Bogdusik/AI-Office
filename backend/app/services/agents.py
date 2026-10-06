@@ -68,6 +68,7 @@ async def _place(
     joining: bool,
 ) -> int:
     floor = await get_floor(session, floor_id, lock=True)
+    rules.ensure_floor_accepts_agents(floor.kind)
     if joining:
         rules.ensure_floor_has_room(await count_active_agents(session, floor.id), floor.capacity)
     taken = await _taken_desks(session, floor.id, exclude_agent_id=agent_id)
