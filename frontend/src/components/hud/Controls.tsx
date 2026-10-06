@@ -6,7 +6,7 @@ import { useWorldStore } from "@/store/useWorldStore";
 const pill =
   "rounded-full px-3.5 py-1.5 text-xs font-medium tracking-wide transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
 
-export function Controls() {
+export function FloorControls() {
   const floors = useWorldStore((s) => s.world?.floors);
   const selected = useUiStore((s) => s.selectedFloor);
   const selectFloor = useUiStore((s) => s.selectFloor);
@@ -19,8 +19,7 @@ export function Controls() {
   ];
 
   return (
-    <div className="pointer-events-none absolute inset-x-0 bottom-5 flex justify-center px-4">
-      <div className="pointer-events-auto flex items-center gap-2 rounded-full border border-ink/10 bg-white/85 p-1.5 shadow-[0_8px_30px_-12px_rgba(20,22,31,0.35)] backdrop-blur">
+    <div data-testid="floor-controls" className="pointer-events-auto flex w-fit items-center gap-2 rounded-full border border-line bg-white/90 p-1.5 shadow-[0_12px_40px_-18px_rgba(20,22,31,0.45)] backdrop-blur">
         <span className="pl-2.5 pr-1 font-mono text-[10px] uppercase tracking-[0.18em] text-ink/45">Этаж</span>
         <div role="radiogroup" aria-label="Выбор этажа" className="flex gap-1">
           {options.map((o) => {
@@ -52,7 +51,6 @@ export function Controls() {
           </svg>
           Домой
         </button>
-      </div>
     </div>
   );
 }
@@ -61,8 +59,8 @@ export function PreviewBadge() {
   const preview = useUiStore((s) => s.preview);
   if (!preview) return null;
   return (
-    <div className="pointer-events-none absolute top-4 left-1/2 -translate-x-1/2 rounded-full bg-accent px-3 py-1 font-mono text-[10px] font-semibold uppercase tracking-[0.2em] text-white shadow">
-      Preview — все на местах
+    <div className="pointer-events-none rounded-full bg-accent px-3 py-1.5 font-mono text-[10px] font-semibold whitespace-nowrap uppercase tracking-[0.2em] text-white shadow">
+      Preview
     </div>
   );
 }

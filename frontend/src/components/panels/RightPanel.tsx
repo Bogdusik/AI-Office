@@ -8,6 +8,27 @@ import { HirePanel } from "./HirePanel";
 import { SpotPanel } from "./SpotPanel";
 import { TaskCard } from "./TaskCard";
 
+/** Whether a right panel is showing — the HUD moves out of its way. */
+export function useRightPanelOpen(): boolean {
+  const selection = useUiStore((s) => s.selection);
+  const taskId = useUiStore((s) => s.taskId);
+  const world = useWorldStore((s) => s.world);
+  if (!world) return false;
+  if (taskId !== null) return true;
+  switch (selection?.kind) {
+    case "agent":
+      return findAgent(world, selection.id) !== null;
+    case "desk": {
+      const floor = world.floors.find((f) => f.id === selection.floorId);
+      return !!floor && !floor.agents.some((a) => a.desk_index === selection.deskIndex);
+    }
+    case "spot":
+      return true;
+    default:
+      return false;
+  }
+}
+
 /** The panel for whatever is selected; selection lives in the UI store. */
 export function RightPanel() {
   const selection = useUiStore((s) => s.selection);

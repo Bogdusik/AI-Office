@@ -3,6 +3,7 @@
  *   node --experimental-strip-types --no-warnings --import ./scripts/register-ts.mjs scripts/check-layout.mts
  */
 import assert from "node:assert/strict";
+import { RIBBON, ribbonState } from "@/lib/stages";
 import { MAP_EDGES, type Vec3, buildScene, inRect, routeGraph } from "@/scene/layout";
 
 type FloorFixture = Parameters<typeof buildScene>[0][number];
@@ -139,5 +140,18 @@ for (const [label, floors, expectedSpots] of [
     }
   });
 }
+
+check("stage ribbon follows the task lifecycle", () => {
+  assert.equal(RIBBON.length, 7);
+  assert.deepEqual(ribbonState("queued", null), { current: 0, complete: false, halted: false });
+  assert.equal(ribbonState("in_progress", null).current, 1);
+  assert.equal(ribbonState("in_progress", "research").current, 2);
+  assert.equal(ribbonState("paused", "self_check").current, 4);
+  assert.equal(ribbonState("changes_requested", "draft").current, 3);
+  assert.equal(ribbonState("needs_review", "self_check").current, 5);
+  assert.deepEqual(ribbonState("done", "self_check"), { current: 6, complete: true, halted: false });
+  assert.deepEqual(ribbonState("cancelled", null), { current: 0, complete: false, halted: true });
+  assert.equal(ribbonState("failed", "draft").current, 3);
+});
 
 console.log(`\n${checks} checks passed`);
