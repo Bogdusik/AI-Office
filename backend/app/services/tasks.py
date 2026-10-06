@@ -28,7 +28,7 @@ async def list_tasks(
 
 
 async def get_task(session: AsyncSession, task_id: int, *, lock: bool = False) -> Task:
-    stmt = select(Task).where(Task.id == task_id)
+    stmt = select(Task).where(Task.id == task_id).execution_options(populate_existing=True)
     if lock:
         stmt = stmt.with_for_update()
     task = await session.scalar(stmt)

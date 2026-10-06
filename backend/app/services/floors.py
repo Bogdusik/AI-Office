@@ -17,7 +17,7 @@ async def list_floors(session: AsyncSession) -> Sequence[Floor]:
 async def get_floor(session: AsyncSession, floor_id: int, *, lock: bool = False) -> Floor:
     stmt = select(Floor).where(Floor.id == floor_id)
     if lock:
-        stmt = stmt.with_for_update()
+        stmt = stmt.with_for_update().execution_options(populate_existing=True)
     floor = await session.scalar(stmt)
     if floor is None:
         raise NotFoundError(f"Floor {floor_id} not found")

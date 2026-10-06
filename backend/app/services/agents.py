@@ -27,7 +27,7 @@ async def list_agents(
 async def get_agent(session: AsyncSession, agent_id: int, *, lock: bool = False) -> Agent:
     stmt = select(Agent).where(Agent.id == agent_id)
     if lock:
-        stmt = stmt.with_for_update()
+        stmt = stmt.with_for_update().execution_options(populate_existing=True)
     agent = await session.scalar(stmt)
     if agent is None:
         raise NotFoundError(f"Agent {agent_id} not found")
