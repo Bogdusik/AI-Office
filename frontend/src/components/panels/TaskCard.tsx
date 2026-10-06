@@ -192,6 +192,7 @@ export function TaskCard({ taskId, located }: { taskId: number; located: Located
                 <table className="w-full text-xs">
                   <thead className="bg-paper/70 text-left text-ink/50">
                     <tr>
+                      <th className="px-2.5 py-1.5 font-medium">Версия</th>
                       <th className="px-2.5 py-1.5 font-medium">Этап</th>
                       <th className="px-2.5 py-1.5 font-medium">Модель</th>
                       <th className="px-2.5 py-1.5 text-right font-medium">Токены вх/вых</th>
@@ -201,8 +202,9 @@ export function TaskCard({ taskId, located }: { taskId: number; located: Located
                   <tbody>
                     {task.runs.map((r) => (
                       <tr key={r.id} className="border-t border-line">
+                        <td className="px-2.5 py-1.5 font-mono text-ink/60">v{r.attempt}</td>
                         <td className="px-2.5 py-1.5">{TASK_STAGE[r.stage]}</td>
-                        <td className="px-2.5 py-1.5 font-mono">{r.model ?? "—"}</td>
+                        <td className="px-2.5 py-1.5 font-mono">{r.model ?? r.provider}</td>
                         <td className="px-2.5 py-1.5 text-right font-mono">
                           {formatNumber(r.input_tokens)} / {formatNumber(r.output_tokens)}
                         </td>
@@ -214,7 +216,7 @@ export function TaskCard({ taskId, located }: { taskId: number; located: Located
                   </tbody>
                   <tfoot>
                     <tr className="border-t border-line bg-paper/50">
-                      <td colSpan={2} className="px-2.5 py-1.5 text-ink/55">
+                      <td colSpan={3} className="px-2.5 py-1.5 text-ink/55">
                         Всего
                       </td>
                       <td className="px-2.5 py-1.5 text-right font-mono font-medium">{formatNumber(tokens)}</td>

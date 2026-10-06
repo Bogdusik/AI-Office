@@ -2,9 +2,8 @@
 
 import type { WorldState } from "@/lib/api";
 import { AGENT_STATUS } from "@/lib/labels";
-import type { FloorData, SceneSpec } from "@/scene/layout";
+import { type FloorData, type SceneSpec, presence } from "@/scene/layout";
 import { useUiStore } from "@/store/useUiStore";
-import { isPresent } from "@/store/useWorldStore";
 import { Batches } from "./parts/Batches";
 import { Highlight } from "./parts/Highlight";
 import { Picking } from "./parts/Picking";
@@ -26,7 +25,7 @@ export function toFloorData(world: WorldState, preview: boolean): FloorData[] {
       deskIndex: a.desk_index,
       roleKey: a.role_key,
       title: a.title,
-      present: isPresent(a, preview),
+      ...presence(a.status, preview),
       status: AGENT_STATUS[a.status].label,
       statusColor: AGENT_STATUS[a.status].color,
     })),
