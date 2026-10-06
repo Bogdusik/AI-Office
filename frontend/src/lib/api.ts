@@ -40,10 +40,13 @@ export type AgentState = {
   awaiting_review: number;
 };
 
+export type FloorKind = "reception" | "office";
+
 export type FloorState = {
   id: number;
   number: number;
   name: string;
+  kind: FloorKind;
   capacity: number;
   has_director_office: boolean;
   agents: AgentState[];

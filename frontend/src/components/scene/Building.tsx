@@ -2,74 +2,47 @@
 
 import { useMemo } from "react";
 import type { WorldState } from "@/lib/api";
-import { buildingLayout, coreLayout, entranceLayout, greenery, siteLayout } from "@/scene/layout";
-import { carColor } from "@/scene/palette";
+import { type FloorData, buildScene } from "@/scene/layout";
 import { isFloorVisible, useUiStore } from "@/store/useUiStore";
 import { isPresent } from "@/store/useWorldStore";
-import { CoreSegment } from "./CoreSegment";
-import { Entrance } from "./Entrance";
-import { FloorLevel } from "./FloorLevel";
-import { type ParkedCar, Parking } from "./Parking";
-import { GreeneryPiece } from "./parts/Greenery";
+import { Batches } from "./parts/Batches";
+import { Roof } from "./parts/Roof";
+import { RoutesOverlay } from "./parts/RoutesOverlay";
+import { SceneLabels } from "./parts/SceneLabels";
+import { Walls } from "./parts/Walls";
 
-export function useSiteLayout(world: WorldState) {
-  return useMemo(() => {
-    const building = buildingLayout(world.floors);
-    const site = siteLayout(building);
-    const entrance = entranceLayout(building, site.road.z0);
-    return {
-      building,
-      core: coreLayout(building),
-      site,
-      entrance,
-      plants: greenery(building, site, entrance),
-    };
-  }, [world]);
+export function toFloorData(world: WorldState, preview: boolean): FloorData[] {
+  return world.floors.map((f) => ({
+    id: f.id,
+    number: f.number,
+    name: f.name,
+    kind: f.kind,
+    capacity: f.capacity,
+    has_director_office: f.has_director_office,
+    agents: f.agents.map((a) => ({
+      id: a.id,
+      deskIndex: a.desk_index,
+      roleKey: a.role_key,
+      title: a.title,
+      present: isPresent(a, preview),
+    })),
+  }));
 }
 
-export function Building({ world }: { world: WorldState }) {
+export function Building({ world, homeZoom }: { world: WorldState; homeZoom: number }) {
   const selected = useUiStore((s) => s.selectedFloor);
   const preview = useUiStore((s) => s.preview);
-  const { building, core, site, entrance, plants } = useSiteLayout(world);
-  const floorsByNumber = useMemo(() => new Map(world.floors.map((f) => [f.number, f])), [world]);
-  const visible = building.floors.filter((f) => isFloorVisible(f.number, selected));
-  const topVisible = visible.at(-1)?.number;
-
-  const cars: ParkedCar[] = building.floors.flatMap((layout) => {
-    const floor = floorsByNumber.get(layout.number);
-    if (!floor) return [];
-    return floor.agents
-      .filter((a) => isPresent(a, preview))
-      .map((a) => ({ key: a.id, spot: site.deskSpot(layout.index, a.desk_index), color: carColor(a.role_key) }));
-  });
+  const showRoutes = useUiStore((s) => s.routes);
+  const floors = useMemo(() => toFloorData(world, preview), [world, preview]);
+  const scene = useMemo(() => buildScene(floors, (n) => isFloorVisible(n, selected)), [floors, selected]);
 
   return (
     <group>
-      {visible.map((layout) => {
-        const floor = floorsByNumber.get(layout.number);
-        if (!floor) return null;
-        const isTop = layout.number === topVisible;
-        return (
-          <group key={floor.id}>
-            <FloorLevel floor={floor} layout={layout} building={building} isTop={isTop} preview={preview} />
-            <group position={[0, layout.baseY, 0]}>
-              <CoreSegment
-                building={building}
-                core={core}
-                floorIndex={layout.index}
-                floorNumber={floor.number}
-                floorName={floor.name}
-                isTop={isTop}
-              />
-            </group>
-          </group>
-        );
-      })}
-      {building.floors.length > 0 && <Entrance layout={entrance} />}
-      <Parking site={site} cars={cars} />
-      {plants.map((item, i) => (
-        <GreeneryPiece key={i} item={item} />
-      ))}
+      <Batches parts={scene.parts} />
+      <Walls walls={scene.walls} />
+      <SceneLabels labels={scene.labels} />
+      {selected === "all" && <Roof parts={scene.roof} homeZoom={homeZoom} />}
+      {showRoutes && <RoutesOverlay routes={scene.routes} />}
     </group>
   );
 }
