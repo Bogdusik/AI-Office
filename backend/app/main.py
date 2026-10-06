@@ -8,7 +8,8 @@ from fastapi.responses import JSONResponse
 from app.api.health import router as health_router
 from app.api.v1.router import api_router
 from app.core.config import get_settings
-from app.db.session import engine
+from app.db.session import SessionLocal, engine
+from app.executor import Executor, FakeWorker, Timings
 from app.services.errors import (
     ConflictError,
     DomainError,
@@ -23,10 +24,31 @@ ERROR_STATUS: dict[type[DomainError], int] = {
 }
 
 
+def build_executor() -> Executor:
+    settings = get_settings()
+    return Executor(
+        SessionLocal,
+        engine,
+        FakeWorker(settings.executor_stage_seconds),
+        Timings(
+            arrive=settings.executor_arrive_seconds,
+            depart=settings.executor_depart_seconds,
+            tick=settings.executor_tick_seconds,
+        ),
+    )
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-    yield
-    await engine.dispose()
+    executor = build_executor() if get_settings().executor_enabled else None
+    if executor:
+        await executor.start()
+    try:
+        yield
+    finally:
+        if executor:
+            await executor.stop()
+        await engine.dispose()
 
 
 app = FastAPI(title="AI Office API", version="0.2.0", lifespan=lifespan)

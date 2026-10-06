@@ -76,6 +76,7 @@ class Run(Base):
     )
     error: Mapped[str | None] = mapped_column(Text)
     output: Mapped[str] = mapped_column(Text, default="", server_default="")
+    sources: Mapped[list[str]] = mapped_column(JSONB, default=list, server_default="[]")
     attempt: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

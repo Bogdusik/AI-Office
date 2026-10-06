@@ -1,4 +1,4 @@
-"""runs for the executor: stage output, attempt (result version), interrupted/cancelled runs, fake provider
+"""runs for the executor: stage output and sources, attempt (result version), interrupted/cancelled runs, fake provider
 
 Revision ID: 0003
 Revises: 0002
@@ -11,6 +11,7 @@ Downgrade maps interrupted/cancelled runs to failed and fake runs to ollama befo
 from collections.abc import Sequence
 
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 
 from alembic import op
 
@@ -22,6 +23,10 @@ depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
     op.add_column("runs", sa.Column("output", sa.Text(), server_default="", nullable=False))
+    op.add_column(
+        "runs",
+        sa.Column("sources", postgresql.JSONB(astext_type=sa.Text()), server_default="[]", nullable=False),
+    )
     op.add_column("runs", sa.Column("attempt", sa.Integer(), server_default="1", nullable=False))
     op.drop_constraint(op.f("ck_runs_run_status"), "runs", type_="check")
     op.create_check_constraint(
@@ -49,4 +54,5 @@ def downgrade() -> None:
         op.f("ck_runs_run_status"), "runs", "status IN ('running', 'succeeded', 'failed')"
     )
     op.drop_column("runs", "attempt")
+    op.drop_column("runs", "sources")
     op.drop_column("runs", "output")
