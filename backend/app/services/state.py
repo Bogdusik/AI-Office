@@ -61,6 +61,7 @@ async def build_state(session: AsyncSession) -> WorldState:
                 id=f.id,
                 number=f.number,
                 name=f.name,
+                kind=f.kind,
                 capacity=f.capacity,
                 has_director_office=f.has_director_office,
                 agents=agents_by_floor[f.id],

@@ -29,6 +29,7 @@ async def run_seed(session: AsyncSession) -> SeedReport:
             floor = Floor(
                 number=spec.number,
                 name=spec.name,
+                kind=spec.kind,
                 capacity=spec.capacity,
                 has_director_office=spec.has_director_office,
             )

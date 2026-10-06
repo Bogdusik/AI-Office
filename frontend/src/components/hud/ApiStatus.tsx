@@ -26,7 +26,7 @@ const LABEL: Record<ApiState, string> = {
 };
 
 const DOT: Record<ApiState, string> = {
-  checking: "bg-paper/40",
+  checking: "bg-ink/30",
   ok: "bg-signal-ok shadow-[0_0_10px_var(--color-signal-ok)]",
   down: "bg-signal-down shadow-[0_0_10px_var(--color-signal-down)]",
 };
@@ -52,7 +52,7 @@ export function ApiStatus() {
   return (
     <div
       data-testid="api-status"
-      className="pointer-events-none absolute top-4 right-4 flex items-center gap-2 rounded-md border border-paper/15 bg-ink/70 px-3 py-1.5 font-mono text-xs tracking-wide text-paper backdrop-blur"
+      className="pointer-events-none absolute top-4 right-4 flex items-center gap-2 rounded-full border border-ink/10 bg-white/85 px-3 py-1.5 font-mono text-xs tracking-wide text-ink shadow-[0_8px_30px_-12px_rgba(20,22,31,0.35)] backdrop-blur"
     >
       <span className={`h-2 w-2 rounded-full ${DOT[status]}`} />
       {LABEL[status]}
