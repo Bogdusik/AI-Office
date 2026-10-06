@@ -6,7 +6,7 @@ const status = (s: string) => TASK_STATUS[s as TaskStatus]?.label ?? s;
 /** Backend messages (409/422/404) → what the director should read. Order matters: first match wins. */
 const MESSAGES: [RegExp, (...m: string[]) => string][] = [
   [/^Cannot move task from '(\w+)' to '(\w+)'/, (a, b) => `Нельзя перевести задачу из «${status(a)}» в «${status(b)}». Статус мог измениться — данные обновлены.`],
-  [/^Cannot resume a task in status '(\w+)'/, (a) => `Продолжить можно только задачу на паузе или на доработке, а эта сейчас «${status(a)}».`],
+  [/^Cannot resume a task in status '(\w+)'/, (a) => `Продолжить можно только задачу на паузе, а эта сейчас «${status(a)}».`],
   [/^A director comment is required/, () => "Чтобы вернуть задачу, напишите комментарий: что исправить."],
   [/^Floor is full \((\d+)\/(\d+)\)/, (a, b) => `Этаж заполнен: заняты все ${b} мест.`],
   [/^Role key '(.+)' is already used/, (k) => `role_key «${k}» уже занят другим сотрудником.`],

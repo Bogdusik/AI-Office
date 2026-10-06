@@ -6,7 +6,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
-from app.models.enums import CommentAuthor, Provider, RunStatus, TaskStage, TaskStatus
+from app.models.enums import CommentAuthor, RunProvider, RunStatus, TaskStage, TaskStatus
 from app.models.types import str_enum
 
 if TYPE_CHECKING:
@@ -57,12 +57,15 @@ class TaskComment(Base):
 
 
 class Run(Base):
+    """One stage of one attempt; `attempt` is the artifact version the run works towards."""
+
     __tablename__ = "runs"
+    __table_args__ = (Index("ix_runs_task_attempt", "task_id", "attempt"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     task_id: Mapped[int] = mapped_column(ForeignKey("tasks.id", ondelete="CASCADE"), index=True)
     stage: Mapped[TaskStage] = mapped_column(str_enum(TaskStage, "run_stage"))
-    provider: Mapped[Provider] = mapped_column(str_enum(Provider, "run_provider"))
+    provider: Mapped[RunProvider] = mapped_column(str_enum(RunProvider, "run_provider"))
     model: Mapped[str | None] = mapped_column(String(200))
     input_tokens: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     output_tokens: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
@@ -72,6 +75,8 @@ class Run(Base):
         server_default=RunStatus.RUNNING,
     )
     error: Mapped[str | None] = mapped_column(Text)
+    output: Mapped[str] = mapped_column(Text, default="", server_default="")
+    attempt: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
