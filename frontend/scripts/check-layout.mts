@@ -15,9 +15,19 @@ import {
   floorObstacles,
   greenery,
   inRect,
+  type Plan,
+  type TripInput,
+  liftHeights,
   outdoorObstacles,
+  planTrips,
   presence,
+  relevantTrips,
+  sample,
+  samplePeople,
+  tripWorld,
+  windowOpen,
   routeGraph,
+  routes as carRoutes,
   segmentClear,
   walkGraph,
 } from "@/scene/layout";
@@ -197,6 +207,107 @@ for (const [label, floors, expectedSpots] of [
       const h = p.box.size[1];
       assert.ok(y - h / 2 >= f.baseY - 1e-6 && y + h / 2 <= f.baseY + building.pitch, `${p.key} within storey`);
     }
+  });
+}
+
+/* ---------- trips ---------- */
+
+{
+  const scene = buildScene(standard, () => true);
+  const { building, site } = scene;
+  const world = tripWorld(building, site, carRoutes(site), walkGraph(building, site));
+  const D = { arrive: 75, depart: 75 };
+  const desks: [number, number][] = [[1, 0], [1, 1], [1, 2], [1, 3], [2, 0], [2, 1]];
+  const trips = (kind: "arrive" | "depart", start = 1000, gap = 0.4): TripInput[] =>
+    desks.map(([f, d], i) => ({ agentId: i + 1, kind, start: start + i * gap, floorIndex: f, deskIndex: d, spot: site.deskSpot(f, d) }));
+  const ys = liftHeights(building);
+  const last = (segs: Plan["car"]) => segs.filter((x) => Number.isFinite(x.t1)).at(-1)!.t1;
+
+  /** Do two cars (1.8 × 4 m, slightly shrunk) overlap? Separating axis test in plan view. */
+  const carsOverlap = (a: { pos: Vec3; yaw: number }, b: { pos: Vec3; yaw: number }) => {
+    const box = (c: { pos: Vec3; yaw: number }) => {
+      const [hx, hz] = [0.85, 1.9];
+      const [s, k] = [Math.sin(c.yaw), Math.cos(c.yaw)];
+      const ax: [number, number] = [k, -s];
+      const az: [number, number] = [s, k];
+      return { c: [c.pos[0], c.pos[2]] as [number, number], axes: [ax, az], h: [hx, hz] };
+    };
+    const [p, q] = [box(a), box(b)];
+    for (const axis of [...p.axes, ...q.axes]) {
+      const proj = (o: typeof p) => o.axes.reduce((n, ax, i) => n + Math.abs(ax[0] * axis[0] + ax[1] * axis[1]) * o.h[i], 0);
+      const d = Math.abs((p.c[0] - q.c[0]) * axis[0] + (p.c[1] - q.c[1]) * axis[1]);
+      if (d > proj(p) + proj(q)) return false;
+    }
+    return true;
+  };
+
+  for (const kind of ["arrive", "depart"] as const) {
+    const schedule = planTrips(trips(kind), D, world);
+    const { plans, props } = schedule;
+    const t0 = 1000;
+
+    check(`trips (${kind}): six at once, each lasts exactly its duration`, () => {
+      for (const p of plans) {
+        const end = kind === "arrive" ? last(p.person) : last(p.car);
+        assert.ok(Math.abs(end - (p.trip.start + D[kind])) < 1e-6, `trip ${p.trip.agentId} ends at ${end - p.trip.start}`);
+        // Six leaving at once queue for the aisle and the exit barrier; a car that got out early drives off slower.
+        const [lo, hi] = kind === "arrive" ? [0.75, 1.5] : [0.4, 6];
+        assert.ok(p.squeeze > lo && p.squeeze < hi, `trip ${p.trip.agentId} final stretch squeeze ${p.squeeze}`);
+      }
+    });
+
+    check(`trips (${kind}): cars never overlap, people keep apart, at most ${4} in the lift`, () => {
+      for (let t = t0; t < t0 + D[kind] + 2; t += 0.1) {
+        const cars = plans.map((p) => sample(p.car, t)).filter((c) => c.visible);
+        for (let i = 0; i < cars.length; i++) for (let j = i + 1; j < cars.length; j++) assert.ok(!carsOverlap(cars[i], cars[j]), `cars overlap at +${(t - t0).toFixed(1)} s`);
+        const people = samplePeople(plans, t, { runs: props.lift, ys }).filter((x) => x.visible);
+        for (let i = 0; i < people.length; i++)
+          for (let j = i + 1; j < people.length; j++) {
+            const [a, b] = [people[i].pos, people[j].pos];
+            const apart = Math.hypot(a[0] - b[0], a[2] - b[2]) >= 0.45 || Math.abs(a[1] - b[1]) > 1;
+            assert.ok(apart, `people ${i}/${j} overlap at +${(t - t0).toFixed(1)} s at ${a.map((v) => v.toFixed(1))}`);
+          }
+        assert.ok(people.filter((x) => x.riding).length <= 4);
+      }
+      assert.ok(props.lift.every((r) => r.riders <= 4));
+    });
+
+    check(`trips (${kind}): barriers are up while a car passes, doors open while a person walks through`, () => {
+      const gate = kind === "arrive" ? props.entry : props.exit;
+      const laneX = kind === "arrive" ? site.entryLaneX : site.exitLaneX;
+      for (const p of plans) {
+        let crossed = false;
+        for (let t = t0; t < t0 + D[kind]; t += 0.05) {
+          const c = sample(p.car, t);
+          if (c.visible && Math.abs(c.pos[0] - laneX) < 1.5 && Math.abs(c.pos[2] - site.barrierZ) < 0.3) {
+            crossed = true;
+            assert.ok(windowOpen(gate, t, 0.9) > 0.95, `barrier down under car ${p.trip.agentId}`);
+          }
+          const person = sample(p.person, t, { runs: props.lift, ys });
+          if (person.visible && Math.abs(person.pos[0] - building.width / 2) < 1.2 && Math.abs(person.pos[2] - building.depth) < 0.15) assert.ok(windowOpen(props.door, t, 0.7) > 0.9, `door shut on ${p.trip.agentId}`);
+        }
+        assert.ok(crossed, `car ${p.trip.agentId} passes its barrier`);
+      }
+    });
+
+    check(`trips (${kind}): a new trip never changes earlier ones; planning is deterministic`, () => {
+      const all = trips(kind);
+      const later: TripInput = { ...all[0], agentId: 99, start: t0 + 3, floorIndex: 2, deskIndex: 2, spot: site.deskSpot(2, 2) };
+      const without = planTrips(all, D, world);
+      const withLater = planTrips([...all, later], D, world);
+      assert.deepEqual(withLater.plans.slice(0, all.length), without.plans);
+      assert.deepEqual(planTrips(all, D, world), without);
+    });
+  }
+
+  check("trips: finished trips drop out only when nothing in progress queued behind them", () => {
+    const old = trips("arrive", 0, 0.4);
+    const recent = trips("depart", 500, 0.4);
+    assert.deepEqual(relevantTrips([...old, ...recent], D, 520), recent);
+    const overlapping: TripInput = { ...old[0], agentId: 50, start: 60 };
+    assert.equal(relevantTrips([...old, overlapping], D, 100).length, old.length + 1);
+    const alone = planTrips(recent, D, world).plans;
+    assert.deepEqual(planTrips(relevantTrips([...old, ...recent], D, 520), D, world).plans, alone);
   });
 }
 

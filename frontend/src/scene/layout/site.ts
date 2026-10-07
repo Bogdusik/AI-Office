@@ -67,7 +67,7 @@ export function siteLayout(b: BuildingLayout): SiteLayout {
   const offsets = capacities.map((_, i) => capacities.slice(0, i).reduce((a, c) => a + c, 0));
 
   const island: Rect = { x0: x0 + p.laneW, x1: x0 + p.laneW + p.island, z0: aisle.z1 + 0.6, z1: roadZ0 - 0.4 };
-  const barrierZ = roadZ0 - 2.2;
+  const barrierZ = roadZ0 - p.barrierSetback;
   const w = DIM.road.width;
   const off = w / 4;
   const crossX = x1 + DIM.cross.gapFromLot + w / 2;

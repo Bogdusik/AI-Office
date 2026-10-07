@@ -10,3 +10,4 @@ export * from "./presence";
 export * from "./site";
 export * from "./types";
 export * from "./walk";
+export * from "./trips";
