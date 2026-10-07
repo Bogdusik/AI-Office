@@ -5,7 +5,22 @@
 import assert from "node:assert/strict";
 import { RIBBON, ribbonState } from "@/lib/stages";
 import { PALETTE } from "@/scene/palette";
-import { MAP_EDGES, type Vec3, buildScene, inRect, presence, routeGraph } from "@/scene/layout";
+import {
+  MAP_EDGES,
+  type Rect,
+  type Vec3,
+  WALK,
+  buildScene,
+  findPath,
+  floorObstacles,
+  greenery,
+  inRect,
+  outdoorObstacles,
+  presence,
+  routeGraph,
+  segmentClear,
+  walkGraph,
+} from "@/scene/layout";
 
 type FloorFixture = Parameters<typeof buildScene>[0][number];
 
@@ -109,6 +124,45 @@ for (const [label, floors, expectedSpots] of [
       const reached = reach(idOf(s.center));
       for (const e of MAP_EDGES) assert.ok(reached.has(idOf(routes.depart[e].at(-1)!)), `${e} reachable from spot ${s.index}`);
     }
+  });
+
+  const walk = walkGraph(building, site);
+
+  check(`${label}: from the entrance a person reaches every desk, the kitchen, lounge, server room and director's office`, () => {
+    const targets = building.floors.flatMap((f) => {
+      if (f.kind === "reception") return [];
+      const ids = Array.from({ length: f.capacity }, (_, d) => WALK.seat(f.index, d));
+      if (f.hasKitchen) ids.push(WALK.kitchen(f.index));
+      if (f.hasServerRoom) ids.push(WALK.serverDoor(f.index));
+      ids.push(f.hasDirectorOffice ? WALK.director(f.index) : WALK.lounge(f.index));
+      return ids;
+    });
+    assert.ok(targets.length > 10);
+    for (const id of targets) assert.ok(findPath(walk, WALK.outsideDoor, id), `${id} reachable from the entrance`);
+    for (const s of site.spots) assert.ok(findPath(walk, WALK.carSide(s.index), WALK.reader), `reader reachable from spot ${s.index}`);
+    for (const f of building.floors) {
+      assert.ok(walk.nodes.has(WALK.lift(f.index)), `lift stop on floor ${f.number}`);
+      assert.ok(findPath(walk, WALK.lift(0), WALK.lift(f.index)), `stairs reach floor ${f.number}`);
+    }
+  });
+
+  check(`${label}: walking paths keep clear of walls, glass rooms, partitions and furniture`, () => {
+    const plants = greenery(building, site, scene.entrance).map((g): Rect => ({ x0: g.position[0] - 0.6 * g.scale, x1: g.position[0] + 0.6 * g.scale, z0: g.position[2] - 0.6 * g.scale, z1: g.position[2] + 0.6 * g.scale }));
+    plants.push(...greenery(building, site, scene.entrance).filter((g) => g.kind === "flowerbed").map((g): Rect => ({ x0: g.position[0] - 1.5, x1: g.position[0] + 1.5, z0: g.position[2] - 0.7, z1: g.position[2] + 0.7 })));
+    const [rx, , rz] = scene.entrance.reader;
+    const outside = outdoorObstacles(building, site, [...plants, { x0: rx - 0.08, x1: rx + 0.08, z0: rz - 0.08, z1: rz + 0.08 }]);
+    const byFloor = building.floors.map((f) => floorObstacles(building, f));
+    let tested = 0;
+    for (const e of walk.edges) {
+      const a = walk.nodes.get(e.a)!;
+      const c = walk.nodes.get(e.b)!;
+      const floorIndex = a.floor ?? c.floor;
+      const rects = a.floor === null && c.floor === null ? outside : floorIndex === null ? outside : byFloor[floorIndex];
+      const hit = segmentClear(a.p, c.p, rects);
+      assert.equal(hit, null, `${e.a} → ${e.b} hits ${JSON.stringify(hit)}`);
+      tested++;
+    }
+    assert.ok(tested > 50);
   });
 
   check(`${label}: reception floor has no desks, office floors have kitchens`, () => {

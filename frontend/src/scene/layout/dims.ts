@@ -21,7 +21,11 @@ export const DIM = {
   stair: { tread: 0.28, laneW: 1.45 },
   road: { setback: 7, width: 7, halfLength: 160, laneOffset: 1.75 },
   cross: { gapFromLot: 12 },
-  parking: { gap: 5, spotW: 2.7, spotD: 5.2, aisle: 6.5, laneW: 3.6, island: 1.2, curb: 0.6, guestSpots: 2 },
+  /**
+   * `aisleLane`: offset of the inbound (−) and outbound (+) driving lines from the aisle centre;
+   * `endRoom`: free asphalt past the last spot so a car can reverse out; `gate`: pedestrian gap in the west fence.
+   */
+  parking: { gap: 5, spotW: 2.7, spotD: 5.2, aisle: 6.5, laneW: 3.6, island: 1.2, curb: 0.6, guestSpots: 2, aisleLane: 1.3, endRoom: 2.8, gate: 1.4, armShort: 0.6 },
   fence: { step: 2.5, height: 1.1, inset: 0.4 },
   roof: { parapet: 0.7, thickness: 0.3 },
   /** Invisible click volumes: a workstation (desk, chair, person, plaque), the director's room, a parked car. */
@@ -31,6 +35,32 @@ export const DIM = {
   server: { inset: 0.35, depth: 4.4, racks: 4, rack: { w: 0.62, d: 1.0, h: 2.0 }, gap: 0.22, leds: 5, door: 1.3 },
   /** Glass partition between the desks and the kitchen/lounge side, with a doorway. */
   partition: { height: 2.7, door: 1.8 },
+  /** Walking graph: a person's clearance radius and the stair opening from a floor to its landing. */
+  walk: { radius: 0.28, stairDoor: 1.05, readerStand: 0.55, carSide: 1.35, outside: 0.8, inside: 0.7 },
+  /**
+   * Trips (stage 7a). Speeds in m/s, times in s; the planner scales them by one pace factor per trip
+   * (between `paceMin` and `paceMax`) so a trip lasts exactly the backend's duration.
+   */
+  motion: {
+    walk: 1.7,
+    stairs: 0.9,
+    road: 22,
+    lot: 6,
+    reverse: 2,
+    brake: 24,
+    turn: 2.4,
+    getOut: 1.4,
+    sit: 1.4,
+    tap: 1.4,
+    gateRaise: 1.1,
+    gateClear: 2.6,
+    doorOpen: 0.7,
+    lift: { speed: 3, doors: 0.9, step: 1.1, hold: 0.8, capacity: 4, home: 4 },
+    queueGap: 0.9,
+    paceMin: 0.6,
+    paceMax: 1.5,
+    stride: 1.25,
+  },
 } as const;
 
 export const CAMERA = {
