@@ -1,20 +1,30 @@
 "use client";
 
-import { TASK_STATUS } from "@/lib/labels";
+import { TASK_STATUS, WAITING_FOR_MODEL } from "@/lib/labels";
 import { RIBBON, ribbonState } from "@/lib/stages";
 import { useTasksStore } from "@/store/useTasksStore";
+import { findAgent } from "@/lib/world";
 import { useUiStore } from "@/store/useUiStore";
+import { useWorldStore } from "@/store/useWorldStore";
 import { HudBlock } from "./HudBlock";
 
 /** Progress of the open task through its stages; hidden while no task is open. */
 export function StageRibbon() {
   const taskId = useUiStore((s) => s.taskId);
   const task = useTasksStore((s) => s.tasks.find((t) => t.id === taskId));
+  const world = useWorldStore((s) => s.world);
   if (!task) return null;
+  const ownerTask = findAgent(world, task.agent_id)?.agent.current_task;
+  const waiting = ownerTask?.id === task.id && ownerTask.waiting_for_model;
 
   const { current, complete, halted } = ribbonState(task.status, task.stage);
   const status = TASK_STATUS[task.status];
-  const note = task.status === "paused" || task.status === "changes_requested" || halted ? status.label : null;
+  const noteColor = waiting ? WAITING_FOR_MODEL.color : status.color;
+  const note = waiting
+    ? WAITING_FOR_MODEL.label.toLowerCase()
+    : task.status === "paused" || task.status === "changes_requested" || halted
+      ? status.label
+      : null;
 
   return (
     <HudBlock
@@ -43,7 +53,7 @@ export function StageRibbon() {
               </span>
               <span className={`text-center text-[10.5px] leading-tight ${isCurrent ? "font-semibold text-ink" : passed ? "text-ink/75" : "text-ink/40"}`}>{step.label}</span>
               {isCurrent && note && (
-                <span className="rounded-full px-1.5 text-[9.5px] font-medium" style={{ backgroundColor: `${status.color}22`, color: status.color }}>
+                <span className="rounded-full px-1.5 text-[9.5px] font-medium" style={{ backgroundColor: `${noteColor}22`, color: noteColor }} data-note={note}>
                   <span className="brightness-75">{note}</span>
                 </span>
               )}

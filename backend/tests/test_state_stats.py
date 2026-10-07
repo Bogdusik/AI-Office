@@ -73,3 +73,20 @@ def test_start_of_local_day() -> None:
     start = start_of_local_day(now)
     assert (start.year, start.month, start.day, start.hour, start.minute) == (2026, 10, 6, 0, 0)
     assert start.utcoffset() == now.utcoffset()
+
+
+async def test_current_task_shows_waiting_for_model(
+    client: AsyncClient, db: AsyncSession, make_floor: Factory, make_agent: Factory, make_task: Factory
+) -> None:
+    from app.models import Run
+    from app.models.enums import RunProvider, RunStatus, TaskStage
+
+    floor = await make_floor()
+    agent = await make_agent(floor["id"])
+    task = await make_task(agent["id"])
+    await task_service.start(db, task["id"])
+    db.add(Run(task_id=task["id"], stage=TaskStage.PLAN, provider=RunProvider.OLLAMA, status=RunStatus.WAITING))
+    await db.commit()
+
+    [state_agent] = (await client.get("/api/v1/state")).json()["floors"][0]["agents"]
+    assert state_agent["current_task"]["waiting_for_model"] is True

@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from app.events import Event, bus
 from app.executor import Executor, FakeWorker, StageInput, StageOutput, Timings
+from app.executor.worker import StageReport
 from app.models import Agent, Artifact, Run, Task
 from app.models.enums import AgentStatus, RunProvider, RunStatus, TaskStage, TaskStatus
 from tests.conftest import Factory
@@ -36,14 +37,14 @@ class ScriptedWorker(FakeWorker):
     def started(self, task_id: int, stage: TaskStage) -> bool:
         return any(i.task.id == task_id and i.stage == stage for i in self.inputs)
 
-    async def run(self, data: StageInput) -> StageOutput:
+    async def run(self, data: StageInput, report: StageReport) -> StageOutput:
         self.inputs.append(data)
         key = (data.task.id, data.stage)
         if key in self.failing:
             raise RuntimeError("boom")
         if gate := self.gates.get(key):
             await gate.wait()
-        return await super().run(data)
+        return await super().run(data, report)
 
 
 async def until(check: Callable[[], Awaitable[bool] | bool], timeout: float = 5.0) -> None:

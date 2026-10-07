@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Task, TaskStatus } from "@/lib/api";
-import { AGENT_STATUS, TASK_STAGE, TASK_STATUS } from "@/lib/labels";
+import { TASK_STAGE, TASK_STATUS, agentTag } from "@/lib/labels";
 import { allAgents, findAgent } from "@/lib/world";
 import { useTasksStore } from "@/store/useTasksStore";
 import { useUiStore } from "@/store/useUiStore";
@@ -127,7 +127,7 @@ export function ListDock() {
       <div className="flex min-h-0 flex-col gap-0.5 overflow-y-auto px-2 pb-2">
         {tab === "agents" &&
           agents.map(({ agent, floor }) => {
-            const s = AGENT_STATUS[agent.status];
+            const s = agentTag(agent);
             const current = agent.current_task;
             return (
               <Row

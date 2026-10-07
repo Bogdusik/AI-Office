@@ -52,6 +52,8 @@ class CommentAuthor(StrEnum):
 
 
 class RunStatus(StrEnum):
+    WAITING = "waiting"
+    """Queued for the model (GPU); the request has not been sent yet."""
     RUNNING = "running"
     SUCCEEDED = "succeeded"
     FAILED = "failed"

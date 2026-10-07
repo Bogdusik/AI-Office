@@ -4,8 +4,8 @@ from datetime import datetime
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Agent, Floor, Task
-from app.models.enums import TaskStatus
+from app.models import Agent, Floor, Run, Task
+from app.models.enums import RunStatus, TaskStatus
 from app.schemas.state import AgentState, CurrentTask, FloorState, WorldState, WorldStats
 from app.services import rules
 
@@ -30,6 +30,14 @@ async def build_state(session: AsyncSession, now: datetime | None = None) -> Wor
         )
     ).all()
 
+    waiting = set(
+        (
+            await session.scalars(
+                select(Run.task_id).where(Run.status == RunStatus.WAITING, Run.task_id.in_([t.id for t in tasks]))
+            )
+        ).all()
+    )
+
     tasks_by_agent: dict[int, list[Task]] = defaultdict(list)
     for task in tasks:
         tasks_by_agent[task.agent_id].append(task)
@@ -50,7 +58,11 @@ async def build_state(session: AsyncSession, now: datetime | None = None) -> Wor
                 web_access=agent.web_access,
                 current_task=(
                     CurrentTask(
-                        id=current.id, title=current.title, status=current.status, stage=current.stage
+                        id=current.id,
+                        title=current.title,
+                        status=current.status,
+                        stage=current.stage,
+                        waiting_for_model=current.id in waiting,
                     )
                     if current
                     else None
