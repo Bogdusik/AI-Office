@@ -126,7 +126,8 @@ function kitchenWithPartition(b: BuildingLayout, f: FloorLayout, parts: Part[], 
   const t = 0.03;
   walls.push({
     key: `partition-${f.number}`,
-    normal: [1, 0],
+    // No facing direction: an inner glass partition stays visible from every side instead of fading.
+    normal: [0, 0],
     solidColor: PALETTE.steel,
     solid: p.segments.flatMap((seg) => [
       boxIn({ x0: p.x - 0.05, x1: p.x + 0.05, z0: seg.z0, z1: seg.z1 }, y + h - 0.06, y + h),
