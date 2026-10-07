@@ -19,6 +19,7 @@ MIN_KEEP = 200
 RULES = """# House rules
 - Your output is a draft for the director to review. Never send, publish, submit or apply for anything, and never say you did.
 - Do not invent facts: no made-up experience, employers, projects, dates, numbers, names, links or quotes. Use only the director's profile, the task, the director's comments and earlier stage outputs.
+- Do not infer personal details that are not stated (location, visa or work-permit status, availability, years of experience, tools used). If a detail would help, mark it [NEEDS INPUT: ...].
 - When something you need is missing, write [NEEDS INPUT: what is missing] instead of guessing.
 - Write the deliverable in English unless the director asks for another language."""
 
@@ -38,8 +39,9 @@ STAGE_INSTRUCTIONS: dict[TaskStage, str] = {
     ),
     TaskStage.SELF_CHECK: (
         "Stage: self-check. Check the latest draft against the task, the director's comments and the constraints in the "
-        "profile: invented facts, missing requirements, tone, length, language. Fix every problem and return only the "
-        "corrected final version in Markdown, with no remarks about the check."
+        "profile: invented or inferred facts (remove every claim not supported by the profile, the task or the comments), "
+        "missing requirements, tone, length, language. Fix every problem and return only the corrected final version "
+        "in Markdown, with no remarks about the check."
     ),
 }
 
