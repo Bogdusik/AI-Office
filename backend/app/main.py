@@ -9,7 +9,7 @@ from app.api.health import router as health_router
 from app.api.v1.router import api_router
 from app.core.config import get_settings
 from app.db.session import SessionLocal, engine
-from app.executor import Executor, FakeWorker, Timings
+from app.executor import Executor, FakeWorker, LlmSettings, LlmWorker, StageWorker, Timings
 from app.services.errors import (
     ConflictError,
     DomainError,
@@ -24,16 +24,36 @@ ERROR_STATUS: dict[type[DomainError], int] = {
 }
 
 
+def build_worker() -> StageWorker:
+    settings = get_settings()
+    if settings.executor_worker == "fake":
+        return FakeWorker(settings.executor_stage_seconds)
+    return LlmWorker(
+        LlmSettings(
+            url=settings.ollama_url,
+            model=settings.ollama_model,
+            num_ctx=settings.ollama_num_ctx,
+            think=settings.ollama_think,
+            temperature=settings.ollama_temperature,
+            concurrency=settings.llm_concurrency,
+            stage_timeout=settings.llm_stage_timeout_seconds,
+            retries=settings.llm_retries,
+            reserve_tokens=settings.llm_reserve_tokens,
+        )
+    )
+
+
 def build_executor() -> Executor:
     settings = get_settings()
     return Executor(
         SessionLocal,
         engine,
-        FakeWorker(settings.executor_stage_seconds),
+        build_worker(),
         Timings(
             arrive=settings.executor_arrive_seconds,
             depart=settings.executor_depart_seconds,
             tick=settings.executor_tick_seconds,
+            progress=settings.executor_progress_seconds,
         ),
     )
 

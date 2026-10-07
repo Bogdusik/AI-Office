@@ -1,7 +1,7 @@
 "use client";
 
 import type { WorldState } from "@/lib/api";
-import { AGENT_STATUS } from "@/lib/labels";
+import { agentTag } from "@/lib/labels";
 import { type FloorData, type SceneSpec, presence } from "@/scene/layout";
 import { useUiStore } from "@/store/useUiStore";
 import { Batches } from "./parts/Batches";
@@ -26,8 +26,8 @@ export function toFloorData(world: WorldState, preview: boolean): FloorData[] {
       roleKey: a.role_key,
       title: a.title,
       ...presence(a.status, preview),
-      status: AGENT_STATUS[a.status].label,
-      statusColor: AGENT_STATUS[a.status].color,
+      status: agentTag(a).label,
+      statusColor: agentTag(a).color,
     })),
   }));
 }

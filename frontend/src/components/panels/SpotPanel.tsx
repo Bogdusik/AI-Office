@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import type { WorldState } from "@/lib/api";
-import { AGENT_STATUS } from "@/lib/labels";
+import { agentTag } from "@/lib/labels";
 import { allAgents } from "@/lib/world";
 import { buildingLayout, presence, siteLayout } from "@/scene/layout";
 import { useUiStore } from "@/store/useUiStore";
@@ -24,7 +24,7 @@ export function SpotPanel({ world, index }: { world: WorldState; index: number }
   }, [world, index]);
 
   if (!spot) return null;
-  const status = owner ? AGENT_STATUS[owner.agent.status] : null;
+  const status = owner ? agentTag(owner.agent) : null;
 
   return (
     <PanelShell testId="spot-panel" eyebrow={`Парковка · место ${index + 1}`} title={KIND[spot.kind]} onClose={() => select(null)}>

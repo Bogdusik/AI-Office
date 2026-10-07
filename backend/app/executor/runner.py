@@ -16,12 +16,13 @@ from typing import Literal
 from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, AsyncSession, async_sessionmaker
 
-from app.events import Event, EventBus, publish_agent, publish_artifact, publish_task
+from app.events import Event, EventBus, publish_agent, publish_artifact, publish_progress, publish_run, publish_task
 from app.events import bus as default_bus
 from app.executor.worker import (
     AgentSnapshot,
     CommentSnapshot,
     ProfileSnapshot,
+    StageError,
     StageInput,
     StageOutput,
     StageWorker,
@@ -47,10 +48,44 @@ class Timings:
     depart: float
     tick: float
     """Fallback re-check interval; events usually wake things up sooner."""
+    progress: float = 1.0
+    """How often text produced so far is saved to the run while a stage runs."""
 
 
 class _Cancelled:
     pass
+
+
+class _RunReport:
+    """The executor's side of `StageReport`: run status changes and throttled partial text, all in the DB."""
+
+    def __init__(self, executor: "Executor", run_id: int, task_id: int, agent_id: int) -> None:
+        self._ex = executor
+        self.run_id, self.task_id, self.agent_id = run_id, task_id, agent_id
+        self._text: str | None = None
+        self._saved: str | None = None
+        self._saved_at = 0.0
+
+    async def waiting(self) -> None:
+        await self._ex._set_run_status(self, RunStatus.WAITING)
+
+    async def started(self) -> None:
+        await self._ex._set_run_status(self, RunStatus.RUNNING)
+
+    def partial(self, text: str) -> None:
+        self._text = text
+
+    async def flush(self) -> None:
+        loop = asyncio.get_running_loop()
+        if self._text is None or self._text == self._saved or loop.time() - self._saved_at < self._ex._t.progress:
+            return
+        text, self._saved, self._saved_at = self._text, self._text, loop.time()
+        async with self._ex._sessions() as s:
+            await s.execute(
+                update(Run).where(Run.id == self.run_id, Run.status == RunStatus.RUNNING).values(output=text)
+            )
+            await s.commit()
+        publish_progress(self.task_id, self.agent_id, self.run_id)
 
 
 CANCELLED = _Cancelled()
@@ -127,7 +162,7 @@ class Executor:
         async with self._sessions() as s:
             await s.execute(
                 update(Run)
-                .where(Run.status == RunStatus.RUNNING)
+                .where(Run.status.in_([RunStatus.RUNNING, RunStatus.WAITING]))
                 .values(status=RunStatus.INTERRUPTED, finished_at=now(), error="Interrupted by a server restart")
             )
             await s.commit()
@@ -257,7 +292,7 @@ class Executor:
                 await self._finish(task_id, version)
                 return
             run_id, data = begun
-            outcome = await self._execute(agent_id, task_id, data)
+            outcome = await self._execute(_RunReport(self, run_id, task_id, agent_id), data)
             await self._record(task_id, run_id, outcome)
             if not isinstance(outcome, StageOutput):
                 return
@@ -317,7 +352,7 @@ class Executor:
                 stage=stage,
                 attempt=version,
                 provider=self._worker.provider,
-                model=self._worker.model,
+                model=self._worker.model_for(agent),
                 status=RunStatus.RUNNING,
                 started_at=now(),
             )
@@ -351,19 +386,22 @@ class Executor:
             publish_task(task)
         return run_id, data
 
-    async def _execute(self, agent_id: int, task_id: int, data: StageInput) -> StageOutput | BaseException | _Cancelled:
-        """Runs the stage; a cancelled task stops it right away (pause waits for the boundary)."""
-        work = asyncio.create_task(self._worker.run(data))
-        poke = self._poke(agent_id)
+    async def _execute(self, report: _RunReport, data: StageInput) -> StageOutput | BaseException | _Cancelled:
+        """Runs the stage; a cancelled task stops it right away (pause waits for the boundary).
+        While it runs, partial text is saved every `Timings.progress` seconds."""
+        work = asyncio.create_task(self._worker.run(data, report))
+        poke = self._poke(report.agent_id)
+        wake = min(self._t.tick, self._t.progress)
         try:
             while True:
                 poke.clear()
                 waiter = asyncio.create_task(poke.wait())
-                done, _ = await asyncio.wait({work, waiter}, timeout=self._t.tick, return_when=asyncio.FIRST_COMPLETED)
+                done, _ = await asyncio.wait({work, waiter}, timeout=wake, return_when=asyncio.FIRST_COMPLETED)
                 waiter.cancel()
                 if work in done:
                     break
-                if await self._task_status(task_id) == TaskStatus.CANCELLED:
+                await report.flush()
+                if await self._task_status(report.task_id) == TaskStatus.CANCELLED:
                     work.cancel()
                     await asyncio.gather(work, return_exceptions=True)
                     return CANCELLED
@@ -373,6 +411,19 @@ class Executor:
         if work.cancelled():
             return CANCELLED
         return work.exception() or work.result()
+
+    async def _set_run_status(self, report: _RunReport, status: RunStatus) -> None:
+        values: dict[str, object] = {"status": status}
+        if status == RunStatus.RUNNING:
+            values["started_at"] = now()
+        async with self._sessions() as s:
+            await s.execute(
+                update(Run)
+                .where(Run.id == report.run_id, Run.status.in_([RunStatus.RUNNING, RunStatus.WAITING]))
+                .values(**values)
+            )
+            await s.commit()
+        publish_run(report.task_id, report.agent_id, report.run_id, status)
 
     async def _task_status(self, task_id: int) -> TaskStatus | None:
         async with self._sessions() as s:
@@ -394,7 +445,7 @@ class Executor:
                 run.status = RunStatus.CANCELLED
             else:
                 run.status = RunStatus.FAILED
-                run.error = f"{type(outcome).__name__}: {outcome}"
+                run.error = str(outcome) if isinstance(outcome, StageError) else f"{type(outcome).__name__}: {outcome}"
                 task = await self._lock_task(s, task_id)
                 if task is not None and task.status == TaskStatus.IN_PROGRESS:
                     apply_transition(task, TaskStatus.FAILED, now())

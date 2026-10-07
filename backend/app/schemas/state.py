@@ -8,6 +8,7 @@ class CurrentTask(BaseModel):
     title: str
     status: TaskStatus
     stage: TaskStage | None
+    waiting_for_model: bool = False
 
 
 class AgentState(BaseModel):
