@@ -11,6 +11,8 @@ export function FloorControls() {
   const selected = useUiStore((s) => s.selectedFloor);
   const selectFloor = useUiStore((s) => s.selectFloor);
   const requestHome = useUiStore((s) => s.requestHome);
+  const animation = useUiStore((s) => s.animation);
+  const setAnimation = useUiStore((s) => s.setAnimation);
 
   const numbers = (floors ?? []).map((f) => f.number).sort((a, b) => a - b);
   const options: { value: FloorSelection; label: string }[] = [
@@ -50,6 +52,16 @@ export function FloorControls() {
             <path d="M2.5 7.5 8 3l5.5 4.5M4 6.5V13h8V6.5" strokeLinejoin="round" strokeLinecap="round" />
           </svg>
           Домой
+        </button>
+        <button
+          type="button"
+          onClick={() => setAnimation(!animation)}
+          aria-pressed={animation}
+          title={animation ? "Приезд и отъезд показываются движением" : "Сотрудники и машины появляются и исчезают сразу"}
+          className={`${pill} flex items-center gap-1.5 ${animation ? "text-ink/80 hover:bg-ink/5" : "text-ink/45 hover:bg-ink/5"}`}
+        >
+          <span className={`h-2 w-2 rounded-full ${animation ? "bg-accent" : "bg-ink/25"}`} />
+          Анимация
         </button>
     </div>
   );

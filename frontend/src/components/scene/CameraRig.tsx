@@ -1,11 +1,12 @@
 "use client";
 
 import { CameraControls, CameraControlsImpl, OrthographicCamera } from "@react-three/drei";
-import { useThree } from "@react-three/fiber";
+import { useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useMemo, useRef } from "react";
 import { Box3, type Camera, Vector3 } from "three";
 import { CAMERA, type CameraHome, type Pick } from "@/scene/layout";
 import { useUiStore } from "@/store/useUiStore";
+import { followPoint } from "./motion/Motion";
 
 const { ACTION } = CameraControlsImpl;
 
@@ -62,6 +63,25 @@ export function CameraRig({ home, picks }: { home: CameraHome; picks: Pick[] }) 
     void ctl.setLookAt(x + offset.x, y + offset.y, z + offset.z, x, y, z, true);
     void ctl.zoomTo(Math.max(ctl.camera.zoom, homeRef.current.zoom * CAMERA.focusZoom), true);
   }, [focus, picks]);
+
+  const follow = useUiStore((s) => s.follow);
+  useEffect(() => {
+    const ctl = controls.current;
+    if (ctl && follow !== null) void ctl.zoomTo(Math.max(ctl.camera.zoom, homeRef.current.zoom * CAMERA.focusZoom), true);
+  }, [follow]);
+
+  // "Следить": the orbit target glides after the agent (or their car); at the desk it rests on the desk.
+  useFrame(() => {
+    const ctl = controls.current;
+    const id = useUiStore.getState().follow;
+    if (!ctl || id === null) return;
+    if (followPoint.valid) {
+      void ctl.moveTo(followPoint.position.x, followPoint.position.y, followPoint.position.z, true);
+      return;
+    }
+    const pick = picks.find((p) => p.key === `agent:${id}`);
+    if (pick) void ctl.moveTo(...pick.focus, true);
+  });
 
   return (
     <>
