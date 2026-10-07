@@ -68,11 +68,30 @@ class StageOutput:
     sources: tuple[str, ...] = field(default_factory=tuple)
 
 
+class StageError(Exception):
+    """A failure whose message is meant for the director (stored as the run's error as is)."""
+
+
+class StageReport(Protocol):
+    """How a worker tells the executor what is happening while a stage runs."""
+
+    async def waiting(self) -> None:
+        """Queued for a shared resource (the GPU); the request has not been sent yet."""
+
+    async def started(self) -> None:
+        """The request has really been sent; waiting is over."""
+
+    def partial(self, text: str) -> None:
+        """Text produced so far; the executor saves it at its own pace."""
+
+
 class StageWorker(Protocol):
     provider: RunProvider
-    model: str | None
 
-    async def run(self, data: StageInput) -> StageOutput: ...
+    def model_for(self, agent: AgentSnapshot) -> str | None:
+        """Model the run will use, recorded on the run."""
+
+    async def run(self, data: StageInput, report: StageReport) -> StageOutput: ...
 
 
 def estimate_tokens(text: str) -> int:
@@ -100,12 +119,15 @@ class FakeWorker:
     """Waits `delay` seconds and returns a placeholder in Russian; marks its runs as provider `fake`."""
 
     provider = RunProvider.FAKE
-    model: str | None = None
 
     def __init__(self, delay: float) -> None:
         self.delay = delay
 
-    async def run(self, data: StageInput) -> StageOutput:
+    def model_for(self, agent: AgentSnapshot) -> str | None:
+        return None
+
+    async def run(self, data: StageInput, report: StageReport) -> StageOutput:
+        await report.started()
         await asyncio.sleep(self.delay)
         text = self._text(data)
         return StageOutput(text=text, input_tokens=estimate_tokens(_input_text(data)), output_tokens=estimate_tokens(text))
