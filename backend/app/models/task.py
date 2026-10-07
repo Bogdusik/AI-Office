@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -77,6 +77,9 @@ class Run(Base):
     error: Mapped[str | None] = mapped_column(Text)
     output: Mapped[str] = mapped_column(Text, default="", server_default="")
     sources: Mapped[list[str]] = mapped_column(JSONB, default=list, server_default="[]")
+    activity: Mapped[list[dict[str, object]]] = mapped_column(JSONB, default=list, server_default="[]")
+    """Web steps of the stage (searches, pages) as shown to the director."""
+    tokens_per_second: Mapped[float | None] = mapped_column(Float)
     attempt: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

@@ -107,6 +107,7 @@ class FakeOllama:
 class RecordingReport:
     events: list[str] = field(default_factory=list)
     partials: list[str] = field(default_factory=list)
+    steps: list[list[dict[str, Any]]] = field(default_factory=list)
     on_partial: Callable[[str], None] | None = None
 
     async def waiting(self) -> None:
@@ -119,3 +120,15 @@ class RecordingReport:
         self.partials.append(text)
         if self.on_partial:
             self.on_partial(text)
+
+    async def activity(self, steps: list[dict[str, Any]]) -> None:
+        self.steps.append(steps)
+
+
+def tool_turn(name: str, args: dict[str, Any], *, prompt_tokens: int = 50, output_tokens: int = 10) -> list[dict[str, Any]]:
+    """A streamed model reply that only asks for one tool call."""
+    call = {"function": {"name": name, "arguments": args}}
+    return [
+        {"message": {"role": "assistant", "content": "", "tool_calls": [call]}, "done": False},
+        {"message": {"role": "assistant", "content": ""}, "done": True, "prompt_eval_count": prompt_tokens, "eval_count": output_tokens, "eval_duration": 500_000_000},
+    ]
