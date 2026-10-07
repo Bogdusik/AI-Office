@@ -12,9 +12,10 @@ class Settings(BaseSettings):
     cors_origins: list[str] = ["http://localhost:3000"]
 
     executor_enabled: bool = True
-    executor_arrive_seconds: float = 5.0
+    executor_arrive_seconds: float = 60.0
+    """Trip from the map edge to the desk; the scene fits the whole animation into it."""
     executor_stage_seconds: float = 5.0
-    executor_depart_seconds: float = 5.0
+    executor_depart_seconds: float = 50.0
     executor_tick_seconds: float = 1.0
     executor_worker: Literal["fake", "llm"] = "fake"
     executor_progress_seconds: float = 1.0

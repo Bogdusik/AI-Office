@@ -10,13 +10,14 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    func,
     UniqueConstraint,
     text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
-from app.models.enums import AgentStatus, Provider
+from app.models.enums import AgentStatus, Provider, TripKind
 from app.models.types import str_enum
 
 if TYPE_CHECKING:
@@ -24,11 +25,15 @@ if TYPE_CHECKING:
     from app.models.task import Task
 
 
+TRIP_OF = {AgentStatus.ARRIVING: TripKind.ARRIVE, AgentStatus.LEAVING: TripKind.DEPART}
+
+
 class Agent(Base):
     __tablename__ = "agents"
     __table_args__ = (
         UniqueConstraint("floor_id", "desk_index", name="uq_agents_floor_desk"),
         CheckConstraint("desk_index >= 0", name="desk_index_non_negative"),
+        CheckConstraint("(trip_kind IS NULL) = (trip_started_at IS NULL)", name="trip_complete"),
         CheckConstraint(
             "(archived_at IS NULL AND floor_id IS NOT NULL AND desk_index IS NOT NULL)"
             " OR (archived_at IS NOT NULL AND floor_id IS NULL AND desk_index IS NULL)",
@@ -61,7 +66,20 @@ class Agent(Base):
         default=AgentStatus.OFF_SITE,
         server_default=AgentStatus.OFF_SITE,
     )
+    status_since: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    trip_kind: Mapped[TripKind | None] = mapped_column(str_enum(TripKind, "trip_kind"))
+    trip_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    """The latest trip (arriving or leaving); kept after it ends so the scene can plan around it."""
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    def set_status(self, status: AgentStatus, at: datetime) -> None:
+        """Every status change goes through here: it stamps the start of the status and of a trip."""
+        self.status = status
+        self.status_since = at
+        trip = TRIP_OF.get(status)
+        if trip is not None:
+            self.trip_kind = trip
+            self.trip_started_at = at
 
     floor: Mapped["Floor | None"] = relationship(back_populates="agents")
     tasks: Mapped[list["Task"]] = relationship(back_populates="agent")
