@@ -2,7 +2,7 @@
 
 import { type FormEvent, useMemo, useState } from "react";
 import { type Agent, type Task, api } from "@/lib/api";
-import { AGENT_STATUS, TASK_STAGE, TASK_STATUS } from "@/lib/labels";
+import { TASK_STAGE, TASK_STATUS, agentTag } from "@/lib/labels";
 import { useAction } from "@/lib/useAction";
 import { useFetched } from "@/lib/useFetched";
 import type { LocatedAgent } from "@/lib/world";
@@ -112,7 +112,7 @@ export function AgentPanel({ located }: { located: LocatedAgent }) {
   }, [allTasks, state.id, state.current_task?.id]);
 
   const agent = details.data;
-  const status = AGENT_STATUS[state.status];
+  const status = agentTag(state);
   const current = state.current_task;
 
   const archive = async () => {

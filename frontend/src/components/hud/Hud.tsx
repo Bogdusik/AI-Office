@@ -7,6 +7,7 @@ import { ApiStatus } from "./ApiStatus";
 import { FloorControls, PreviewBadge } from "./Controls";
 import { ListDock } from "./ListDock";
 import { Metrics } from "./Metrics";
+import { ModelStatus } from "./ModelStatus";
 import { Notices } from "./Notices";
 import { Search } from "./Search";
 import { StageRibbon } from "./StageRibbon";
@@ -61,6 +62,7 @@ export function Hud() {
           <div className="flex items-center gap-2">
             <PreviewBadge />
             <ApiStatus />
+            <ModelStatus />
             <DirectorButton />
           </div>
           <Notices />

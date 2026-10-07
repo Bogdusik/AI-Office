@@ -9,6 +9,7 @@ import { useFetched } from "@/lib/useFetched";
 import type { LocatedAgent } from "@/lib/world";
 import { useTasksStore } from "@/store/useTasksStore";
 import { useUiStore } from "@/store/useUiStore";
+import { LiveRun, ResultView } from "./ResultView";
 import { Button, ConfirmButton, Empty, ErrorNote, PanelShell, Pill, Section, formatDate, formatNumber, inputCls } from "./ui";
 
 const TERMINAL: TaskStatus[] = ["done", "failed", "cancelled"];
@@ -115,11 +116,12 @@ export function TaskCard({ taskId, located }: { taskId: number; located: Located
   const select = useUiStore((s) => s.select);
   const revision = useTasksStore((s) => s.revision);
   const listed = useTasksStore((s) => s.tasks.find((t) => t.id === taskId));
-  const { data: task, error } = useFetched((signal) => api.task(taskId, signal), [taskId, revision, listed?.status, listed?.stage]);
+  const live = useTasksStore((s) => s.progress[taskId] ?? 0);
+  const { data: task, error } = useFetched((signal) => api.task(taskId, signal), [taskId, revision, live, listed?.status, listed?.stage]);
 
   const back = located ? () => openTask(null) : () => select(null);
   const s = task ? TASK_STATUS[task.status] : null;
-  const result = task?.artifacts.at(-1);
+  const active = task?.runs.findLast((r) => r.status === "running" || r.status === "waiting");
   const tokens = task?.runs.reduce((n, r) => n + r.input_tokens + r.output_tokens, 0) ?? 0;
 
   return (
@@ -160,17 +162,10 @@ export function TaskCard({ taskId, located }: { taskId: number; located: Located
             {task.description ? <p className="text-sm leading-relaxed whitespace-pre-wrap text-ink/85">{task.description}</p> : <Empty>Без описания.</Empty>}
           </Section>
 
+          {active && <LiveRun run={active} />}
+
           <Section title="Результат" count={task.artifacts.length || undefined}>
-            {result ? (
-              <div className="flex flex-col gap-1">
-                <span className="text-[11px] text-ink/45">
-                  Версия {result.version} · {formatDate(result.created_at)}
-                </span>
-                <pre className="max-h-72 overflow-auto rounded-lg border border-line bg-paper/60 p-3 font-sans text-sm whitespace-pre-wrap text-ink/90">{result.content}</pre>
-              </div>
-            ) : (
-              <Empty>Результата пока нет.</Empty>
-            )}
+            <ResultView artifacts={task.artifacts} />
           </Section>
 
           <Section title="Комментарии" count={task.comments.length}>

@@ -25,6 +25,8 @@ export type CurrentTask = {
   title: string;
   status: TaskStatus;
   stage: TaskStage | null;
+  /** The running stage is queued for the model (GPU); the agent is still "working". */
+  waiting_for_model: boolean;
 };
 
 export type AgentState = {
@@ -129,6 +131,17 @@ export type ProfileUpdate = Omit<Profile, "updated_at">;
 
 export type Floor = Omit<FloorState, "agents">;
 
+export type LlmStatus = {
+  worker: "fake" | "llm";
+  ok: boolean;
+  model: string | null;
+  ollama: boolean | null;
+  version: string | null;
+  available: boolean | null;
+  loaded: boolean | null;
+  message: string | null;
+};
+
 export type ValidationIssue = { loc: (string | number)[]; msg: string; type: string; ctx?: Record<string, unknown> };
 
 /** Non-2xx answer; `detail` is FastAPI's: a message for domain errors, a list of issues for validation. */
@@ -174,6 +187,8 @@ export const api = {
   resume: (id: number) => request<TaskDetail>("POST", `/tasks/${id}/resume`),
   cancel: (id: number) => request<TaskDetail>("POST", `/tasks/${id}/cancel`),
   comment: (id: number, body: string) => request<Comment>("POST", `/tasks/${id}/comments`, { body }),
+
+  llmStatus: (signal?: AbortSignal) => request<LlmStatus>("GET", "/llm/status", undefined, signal),
 
   profile: (signal?: AbortSignal) => request<Profile>("GET", "/profile", undefined, signal),
   saveProfile: (data: ProfileUpdate) => request<Profile>("PUT", "/profile", data),
