@@ -52,6 +52,8 @@ class RunRead(ORMModel):
     error: str | None
     output: str
     sources: list[str]
+    activity: list[dict[str, object]]
+    tokens_per_second: float | None
     started_at: datetime
     finished_at: datetime | None
 

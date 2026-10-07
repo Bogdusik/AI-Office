@@ -66,6 +66,12 @@ class StageOutput:
     input_tokens: int
     output_tokens: int
     sources: tuple[str, ...] = field(default_factory=tuple)
+    tokens_per_second: float | None = None
+    """Generation speed of the last model call, as reported by the model server."""
+
+
+ActivityStep = dict[str, object]
+"""One web step shown to the director: {id, kind: search|fetch, target, status: running|done|failed, detail, source}."""
 
 
 class StageError(Exception):
@@ -83,6 +89,9 @@ class StageReport(Protocol):
 
     def partial(self, text: str) -> None:
         """Text produced so far; the executor saves it at its own pace."""
+
+    async def activity(self, steps: list[ActivityStep]) -> None:
+        """All web steps of this stage so far (searches, pages); saved right away."""
 
 
 class StageWorker(Protocol):

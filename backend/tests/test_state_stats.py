@@ -19,7 +19,9 @@ async def _done(db: AsyncSession, task_id: int) -> None:
 async def test_stats_on_empty_world(client: AsyncClient) -> None:
     res = await client.get("/api/v1/state")
     assert res.status_code == 200
-    assert res.json()["stats"] == {"tasks_in_progress": 0, "awaiting_review": 0, "done_today": 0}
+    assert res.json()["stats"] == {
+        "tasks_in_progress": 0, "awaiting_review": 0, "done_today": 0, "model_busy": False, "model_queue": 0
+    }
 
 
 async def test_stats_count_tasks_by_status(
@@ -44,7 +46,7 @@ async def test_stats_count_tasks_by_status(
     await task_service.cancel(db, cancelled["id"])
 
     stats = (await client.get("/api/v1/state")).json()["stats"]
-    assert stats == {"tasks_in_progress": 2, "awaiting_review": 1, "done_today": 1}
+    assert stats == {"tasks_in_progress": 2, "awaiting_review": 1, "done_today": 1, "model_busy": False, "model_queue": 0}
 
 
 async def test_done_today_ignores_earlier_days(

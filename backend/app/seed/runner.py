@@ -32,6 +32,8 @@ async def run_seed(session: AsyncSession) -> SeedReport:
                 kind=spec.kind,
                 capacity=spec.capacity,
                 has_director_office=spec.has_director_office,
+                has_server_room=spec.has_server_room,
+                has_kitchen=spec.has_kitchen,
             )
             session.add(floor)
             await session.flush()
