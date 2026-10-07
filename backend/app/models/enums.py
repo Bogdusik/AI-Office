@@ -28,6 +28,13 @@ class AgentStatus(StrEnum):
     LEAVING = "leaving"
 
 
+class TripKind(StrEnum):
+    """An agent's trip between the map edge and their desk."""
+
+    ARRIVE = "arrive"
+    DEPART = "depart"
+
+
 class TaskStatus(StrEnum):
     QUEUED = "queued"
     IN_PROGRESS = "in_progress"
