@@ -173,7 +173,7 @@ export function TaskCard({ taskId, located }: { taskId: number; located: Located
 
           {research && (
             <Section title="Поиск в сети" count={research.activity.length} action={<span className="font-mono text-[11px] text-ink/40">v{research.attempt}</span>}>
-              <WebSteps steps={research.activity} />
+              <WebSteps steps={research.activity.map((step) => (step.status === "running" ? { ...step, status: "failed", detail: "прервано" } : step))} />
             </Section>
           )}
 
