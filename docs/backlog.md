@@ -6,6 +6,11 @@ Ideas parked for later stages. Don't implement before their stage.
 
 - `search_jobs` tool for the `job_search` agent: query a jobs API (Adzuna, Reed, or my own SearchWork project) and get structured vacancies (title, company, location, salary, link) instead of reading job-board pages, which often block bots (403) or render in JS.
 
+## Stage 7 — Life animation (later parts)
+
+- Arriving and leaving cars don't yet give way to each other in the parking aisle (leaving cars queue among themselves, arriving cars are spaced at the entry barrier); a car reversing out while another drives in can briefly overlap.
+- When many agents leave at once, the exit barrier is the bottleneck: the planner makes the first cars drive off to the map edge slower or faster (up to ×2.5 / ×0.4 of the normal speed) to keep every trip at exactly its duration.
+
 ## Stage 8 — Polish
 
 - Chandeliers and decorative lighting (emissive only — no extra light sources; shadows stay sun-only)
