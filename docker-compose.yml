@@ -17,5 +17,18 @@ services:
       timeout: 3s
       retries: 10
 
+  searxng:
+    image: searxng/searxng:latest
+    container_name: ai-office-searxng
+    restart: unless-stopped
+    environment:
+      SEARXNG_SECRET: ${SEARXNG_SECRET}
+      SEARXNG_BASE_URL: http://localhost:${SEARXNG_PORT:-8888}/
+    # Bound to 127.0.0.1: reachable from this computer only, not from the local network.
+    ports:
+      - "127.0.0.1:${SEARXNG_PORT:-8888}:8080"
+    volumes:
+      - ./searxng/settings.yml:/etc/searxng/settings.yml:ro
+
 volumes:
   pgdata:

@@ -28,6 +28,15 @@ class Settings(BaseSettings):
     llm_stage_timeout_seconds: float = 300.0
     llm_retries: int = 1
     llm_reserve_tokens: int = 6144
+    llm_research_timeout_seconds: float = 900.0
+
+    searxng_url: str = "http://127.0.0.1:8888"
+    web_max_tool_calls: int = 8
+    web_max_pages: int = 4
+    web_page_chars: int = 4000
+    web_max_bytes: int = 2_000_000
+    web_tool_timeout_seconds: float = 15.0
+    web_search_results: int = 8
 
 
 @lru_cache

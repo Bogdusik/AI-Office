@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, AsyncSession, a
 from app.events import Event, EventBus, publish_agent, publish_artifact, publish_progress, publish_run, publish_task
 from app.events import bus as default_bus
 from app.executor.worker import (
+    ActivityStep,
     AgentSnapshot,
     CommentSnapshot,
     ProfileSnapshot,
@@ -74,6 +75,13 @@ class _RunReport:
 
     def partial(self, text: str) -> None:
         self._text = text
+
+    async def activity(self, steps: list[ActivityStep]) -> None:
+        async with self._ex._sessions() as s:
+            await s.execute(update(Run).where(Run.id == self.run_id).values(activity=steps))
+            await s.commit()
+        publish_run(self.task_id, self.agent_id, self.run_id, RunStatus.RUNNING)
+        publish_progress(self.task_id, self.agent_id, self.run_id)
 
     async def flush(self) -> None:
         loop = asyncio.get_running_loop()
@@ -441,6 +449,7 @@ class Executor:
                 run.sources = list(outcome.sources)
                 run.input_tokens = outcome.input_tokens
                 run.output_tokens = outcome.output_tokens
+                run.tokens_per_second = outcome.tokens_per_second
             elif isinstance(outcome, _Cancelled):
                 run.status = RunStatus.CANCELLED
             else:

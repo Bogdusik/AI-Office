@@ -29,3 +29,5 @@ class FloorRead(ORMModel):
     kind: FloorKind
     capacity: int
     has_director_office: bool
+    has_server_room: bool
+    has_kitchen: bool

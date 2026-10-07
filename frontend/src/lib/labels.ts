@@ -12,9 +12,11 @@ export const AGENT_STATUS: Record<AgentStatus, Tag> = {
 };
 
 export const WAITING_FOR_MODEL: Tag = { label: "Ждёт модель", color: "#6f9bc6" };
+export const ON_WEB: Tag = { label: "Ищет в сети", color: "#2a9fd6" };
 
 /** Status tag of an agent as shown everywhere: "working" splits into working / waiting for the model. */
 export function agentTag(agent: Pick<AgentState, "status" | "current_task">): Tag {
+  if (agent.status === "working" && agent.current_task?.on_web) return ON_WEB;
   if (agent.status === "working" && agent.current_task?.waiting_for_model) return WAITING_FOR_MODEL;
   return AGENT_STATUS[agent.status];
 }

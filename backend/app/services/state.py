@@ -5,7 +5,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Agent, Floor, Run, Task
-from app.models.enums import RunStatus, TaskStatus
+from app.models.enums import RunProvider, RunStatus, TaskStatus
 from app.schemas.state import AgentState, CurrentTask, FloorState, WorldState, WorldStats
 from app.services import rules
 
@@ -30,13 +30,14 @@ async def build_state(session: AsyncSession, now: datetime | None = None) -> Wor
         )
     ).all()
 
-    waiting = set(
-        (
-            await session.scalars(
-                select(Run.task_id).where(Run.status == RunStatus.WAITING, Run.task_id.in_([t.id for t in tasks]))
-            )
-        ).all()
-    )
+    live_runs = (
+        await session.scalars(
+            select(Run).where(Run.status.in_([RunStatus.WAITING, RunStatus.RUNNING]), Run.task_id.in_([t.id for t in tasks]))
+        )
+    ).all()
+    waiting = {r.task_id for r in live_runs if r.status == RunStatus.WAITING}
+    on_web = {r.task_id for r in live_runs if r.status == RunStatus.RUNNING and r.activity and r.activity[-1].get("status") == "running"}
+    model_busy = any(r.status == RunStatus.RUNNING and r.provider == RunProvider.OLLAMA for r in live_runs)
 
     tasks_by_agent: dict[int, list[Task]] = defaultdict(list)
     for task in tasks:
@@ -63,6 +64,7 @@ async def build_state(session: AsyncSession, now: datetime | None = None) -> Wor
                         status=current.status,
                         stage=current.stage,
                         waiting_for_model=current.id in waiting,
+                        on_web=current.id in on_web,
                     )
                     if current
                     else None
@@ -90,6 +92,8 @@ async def build_state(session: AsyncSession, now: datetime | None = None) -> Wor
                 kind=f.kind,
                 capacity=f.capacity,
                 has_director_office=f.has_director_office,
+                has_server_room=f.has_server_room,
+                has_kitchen=f.has_kitchen,
                 agents=agents_by_floor[f.id],
             )
             for f in floors
@@ -98,5 +102,7 @@ async def build_state(session: AsyncSession, now: datetime | None = None) -> Wor
             tasks_in_progress=sum(t.status == TaskStatus.IN_PROGRESS for t in tasks),
             awaiting_review=sum(t.status == TaskStatus.NEEDS_REVIEW for t in tasks),
             done_today=done_today or 0,
+            model_busy=model_busy,
+            model_queue=len(waiting),
         ),
     )

@@ -183,3 +183,66 @@ async def test_waiting_runs_are_interrupted_on_restart(
     await run_with(FakeWorker(0))
     await until(world.is_task(task["id"], TaskStatus.NEEDS_REVIEW))
     assert [r.status for r in await world.runs(task["id"])][0] == RunStatus.INTERRUPTED
+
+
+async def test_research_sources_and_steps_are_saved(
+    client: AsyncClient,
+    world: World,
+    run_with: Callable[[Any], Awaitable[Executor]],
+    floor: dict[str, Any],
+    make_agent: Factory,
+    make_task: Factory,
+) -> None:
+    from tests.llm_fixtures import tool_turn
+    from tests.test_research import GUIDE, PUBLIC
+    from app.executor.research import WebTools
+    from app.web import FetchLimits, PageFetcher, SearxClient
+
+    gate = asyncio.Event()
+
+    async def site(request: httpx.Request) -> httpx.Response:
+        await gate.wait()
+        return httpx.Response(200, headers={"content-type": "text/html"}, text=GUIDE)
+
+    async def resolve(host: str, port: int) -> list[str]:
+        return [PUBLIC]
+
+    def searx(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"results": [{"title": "Guide", "url": "https://docs.example/guide"}]})
+
+    tools = WebTools(
+        search=SearxClient("http://searx.test", transport=httpx.MockTransport(searx)),
+        fetcher=PageFetcher(FetchLimits(), resolve, httpx.MockTransport(site)),
+    )
+    agent = await make_agent(floor["id"], web_access=True)
+    task = await make_task(agent["id"])
+    replies = [
+        chunks("plan"),
+        tool_turn("web_search", {"query": "fastapi"}),
+        tool_turn("fetch_page", {"url": "https://docs.example/guide"}),
+        chunks("- FastAPI uses SQLAlchemy [1]"),
+        chunks("draft [1]"),
+        chunks("final [1]\n\n## Sources\n[1] https://docs.example/guide"),
+    ]
+    await run_with(LlmWorker(llm_settings(), FakeOllama(replies).transport(), web=tools))
+
+    async def reading() -> bool:
+        state = (await client.get("/api/v1/state")).json()["floors"][0]["agents"][0]
+        return bool(state["current_task"] and state["current_task"]["on_web"])
+
+    await until(reading)
+    gate.set()
+    await until(world.is_task(task["id"], TaskStatus.NEEDS_REVIEW))
+
+    runs = await world.runs(task["id"])
+    research = next(r for r in runs if r.stage == TaskStage.RESEARCH)
+    assert research.sources == ["https://docs.example/guide"]
+    assert [(s["kind"], s["status"]) for s in research.activity] == [("search", "done"), ("fetch", "done")]
+    assert research.output.endswith("## Sources\n[1] FastAPI and PostgreSQL — https://docs.example/guide")
+    assert research.tokens_per_second == 20.0
+    [artifact] = await world.artifacts(task["id"])
+    assert artifact.sources == ["https://docs.example/guide"]
+    detail = (await client.get(f"/api/v1/tasks/{task['id']}")).json()
+    assert detail["artifacts"][0]["sources"] == ["https://docs.example/guide"]
+    assert next(r for r in detail["runs"] if r["stage"] == "research")["activity"][1]["source"] == 1
+

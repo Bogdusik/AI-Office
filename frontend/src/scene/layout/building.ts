@@ -42,6 +42,8 @@ export type FloorLayout = {
   baseY: number;
   capacity: number;
   hasDirectorOffice: boolean;
+  hasServerRoom: boolean;
+  hasKitchen: boolean;
   isGround: boolean;
 };
 
@@ -86,6 +88,8 @@ export function buildingLayout(floors: readonly FloorInput[]): BuildingLayout {
       baseY: index * pitch + DIM.slab,
       capacity: f.kind === "office" ? f.capacity : 0,
       hasDirectorOffice: f.kind === "office" && f.has_director_office,
+      hasServerRoom: f.kind === "office" && !!f.has_server_room,
+      hasKitchen: f.kind === "office" && !!f.has_kitchen && !f.has_server_room,
       isGround: index === 0,
     })),
     core: { x0: -coreW, x1: 0, z0: depth - coreD, z1: depth },
@@ -253,6 +257,34 @@ export function kitchenLayout(zone: Rect): KitchenLayout {
     ],
     plant: [zone.x1 - 0.6, 0, zone.z1 - 0.6],
   };
+}
+
+export type ServerRoomLayout = { room: Rect; racks: Placement[]; doorGap: Opening; sign: Vec3; cooler: Placement };
+
+/** Server room in the kitchen zone: a glass room, racks in a row by the back wall, door in the front. */
+export function serverRoomLayout(zone: Rect): ServerRoomLayout {
+  const { inset, depth, racks, rack, gap, door } = DIM.server;
+  const room: Rect = { x0: zone.x0 + inset, x1: zone.x1 - inset, z0: inset, z1: inset + depth };
+  const [cx] = rectCenter(room);
+  const row = racks * rack.w + (racks - 1) * gap;
+  const z = room.z0 + 0.25 + rack.d / 2;
+  return {
+    room,
+    racks: Array.from({ length: racks }, (_, i) => ({ position: [cx - row / 2 + rack.w / 2 + i * (rack.w + gap), 0, z], yaw: 0 })),
+    doorGap: { from: cx - door / 2, to: cx + door / 2 },
+    sign: [cx, 2.3, room.z1 + 0.03],
+    cooler: { position: [room.x1 - 0.45, 0, room.z1 - 0.6], yaw: 0 },
+  };
+}
+
+export type PartitionLayout = { x: number; segments: { z0: number; z1: number }[] };
+
+/** Glass partition along the desk zone's edge, open in the middle so people can walk through. */
+export function partitionLayout(b: BuildingLayout): PartitionLayout {
+  const x = b.deskZone.x1;
+  const mid = b.depth / 2;
+  const half = DIM.partition.door / 2;
+  return { x, segments: [{ z0: 0.2, z1: mid - half }, { z0: mid + half, z1: b.depth - 0.2 }] };
 }
 
 export type GuestGroup = { sofa: Placement; armchairs: Placement[]; table: Vec3; rug: Rect; plant: Vec3 };
