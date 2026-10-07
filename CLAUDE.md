@@ -10,8 +10,8 @@ State lives in the database; the 3D scene only renders it. No business logic in 
 2. Data model and API — done
 3. Static building — done
 4. Clicks and panels — done
-5. Tasks with a fake executor  ← **current**
-6. Real AI via Ollama + web search
+5. Tasks with a fake executor — done
+6. Real AI via Ollama + web search — 6a (local model) ← **current**, 6b web search next
 7. Life animation
 8. Polish
 
@@ -83,7 +83,7 @@ Floors: the reception and the director-office floor can't be deleted (409).
 
 ## Executor and agent lifecycle (stage 5)
 - `app/executor/`: `Executor` starts with the app (`lifespan`, `EXECUTOR_ENABLED`). A supervisor loop keeps one asyncio worker per agent with something to do: agents run in parallel, each on one task at a time. A Postgres advisory lock allows one executor per database; every step is a short transaction that re-checks the status under `FOR UPDATE`, so director actions always win.
-- Stage work is behind `StageWorker.run(StageInput) -> StageOutput` (task, stage, version, profile, agent, comments, earlier stage outputs, earlier results → text, tokens, sources). Today only `FakeWorker` (sleeps `EXECUTOR_STAGE_SECONDS`, returns a Russian placeholder, runs get `provider = fake`). Stage 6 adds a real worker; nothing else should change.
+- Stage work is behind `StageWorker.run(StageInput, StageReport) -> StageOutput` (task, stage, version, profile, agent, comments, earlier stage outputs, earlier results → text, tokens, sources) plus `model_for(agent)`. `StageReport` lets a worker say `waiting()` (queued for the GPU → run status `waiting`), `started()` (request sent → `running`, `started_at` reset) and `partial(text)` (saved to `run.output` every `EXECUTOR_PROGRESS_SECONDS`, SSE `progress`). A `StageError` message is stored on the run as is (it is meant for the director). `EXECUTOR_WORKER=fake|llm` picks `FakeWorker` (placeholder, `provider = fake`) or `LlmWorker`.
 - Stage list: `rules.task_stages(web_access, version)` — the single place to change it. Version 1: plan, research (web access only), draft, self_check. Version 2+ (rework): plan skipped, starts from research/draft with the director's comments and the previous result.
 - Pick order: `in_progress` (after a restart) → `changes_requested` → `queued` by position.
 - Agent `status`: `off_site` + work → `arriving` (EXECUTOR_ARRIVE_SECONDS) → `idle` → `working` (stages; one `Run` each) → after self_check a new artifact version, task → `needs_review`, next task. No work but something in review → `waiting_review` (stays). Only paused tasks left → `idle` (stays, waits for the director). Everything finished/cancelled → `leaving` (EXECUTOR_DEPART_SECONDS) → `off_site`. A new task during `leaving` brings the agent back after it has left.
@@ -91,7 +91,17 @@ Floors: the reception and the director-office floor can't be deleted (409).
 - Restart: `running` runs become `interrupted`, the stage runs again; `arriving` restarts, `leaving` completes, other statuses are reconciled by the loop.
 - Events: `app/events.py` in-process bus; services and the executor publish `agent` (status), `task` (status/stage, also on create), `artifact` (new version). `GET /api/v1/events` streams them as SSE (`retry`, 15 s ping). Frontend `EventSync` refreshes world + tasks on any event (debounced) and shows a notice for `needs_review`; `/state` polling is a 15 s fallback.
 - Scene presence (`scene/layout/presence.ts`): arriving → car only; idle/working/waiting_review → car + person at the desk; leaving → car only; off_site → nothing. `?preview=1` shows everyone.
-- Run the backend with `--timeout-graceful-shutdown 2`: open SSE streams otherwise block reloads.
+- Run the backend with `--timeout-graceful-shutdown 2`: open SSE streams otherwise block reloads. On Windows `--reload` can still hang while a model request streams (the old process keeps serving); restart uvicorn by hand after backend edits when the LLM worker is busy.
+
+## LLM worker (stage 6a)
+- `app/executor/llm.py` — Ollama `/api/chat`, streamed. Model: `OLLAMA_MODEL` (default `qwen3.8:27b`, chosen by `docs/model-benchmark.json`: ~100 tok/s on the RTX 4090, 19 GB VRAM with a 16K window, correct tool calls); an agent's `model` overrides it. Thinking on (`OLLAMA_THINK`), `OLLAMA_NUM_CTX=16384`.
+- GPU queue: an `asyncio.Semaphore(LLM_CONCURRENCY)` in the worker; an agent waiting for it shows "Ждёт модель" (`/state` → `current_task.waiting_for_model`). Lifecycle status stays `working`.
+- Stage timeout (`LLM_STAGE_TIMEOUT_SECONDS`) counts from sending the request, not from joining the queue. One retry (`LLM_RETRIES`) after a timeout, dropped stream, 5xx or connection error; a missing model (404) is not retried. Cancelling the task closes the stream and Ollama stops generating within ~1 s.
+- Errors for the director: "Ollama не отвечает по адресу … Запустите Ollama и повторите задачу.", "Модель «…» не скачана в Ollama. Выполните: ollama pull …", "Модель «…» не ответила за N с (попыток: 2)."
+- `app/executor/prompt.py` (pure): system = agent prompt + director profile + house rules (draft only, never send; no invented or inferred facts — every claim about the director must be in the profile/task/comments; gaps → `[NEEDS INPUT: …]`; English unless asked otherwise) + today's date. User = task, director comments, earlier stages of this version, previous result (rework), stage instruction. research says `Sources: not verified (no web access yet).` until stage 6b. self_check returns only the corrected deliverable (optionally `## Open items`), which becomes the artifact.
+- Context: input budget = (`OLLAMA_NUM_CTX` − `LLM_RESERVE_TOKENS`) × 3.5 chars. Over budget, sections are cut in a fixed order (older stage outputs → older comments → latest stage output → profile → previous result → task last), head + tail kept, marked `[... truncated N chars ...]`. Agent prompt, rules, latest comment and the stage instruction are never cut.
+- `GET /api/v1/llm/status` → worker, Ollama up, version, model available/loaded; HUD `ModelStatus` dot (green ok, red down/missing, grey fake).
+- Task card: live stage block (status, model, Markdown of the text so far), result as Markdown (`react-markdown`, no raw HTML) with version tabs and «Копировать»; a failed task shows the stage error.
 
 ## Rules
 - Secrets only in `.env` files (git-ignored); keep `.env.example` in sync.
