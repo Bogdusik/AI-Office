@@ -6,6 +6,7 @@ context budget, sections are shortened in a fixed order and each cut is marked i
 """
 
 from dataclasses import dataclass, replace
+from datetime import date
 
 from app.executor.worker import StageInput
 from app.models.enums import CommentAuthor, TaskStage
@@ -19,7 +20,7 @@ MIN_KEEP = 200
 RULES = """# House rules
 - Your output is a draft for the director to review. Never send, publish, submit or apply for anything, and never say you did.
 - Do not invent facts: no made-up experience, employers, projects, dates, numbers, names, links or quotes. Use only the director's profile, the task, the director's comments and earlier stage outputs.
-- Do not infer personal details that are not stated (location, visa or work-permit status, availability, years of experience, tools used). If a detail would help, mark it [NEEDS INPUT: ...].
+- Every statement about the director must be backed by a specific line of the profile, the task or the comments. Do not infer or estimate anything else: no distances or travel times, no availability, no tools, roles or responsibilities that are not listed, no skill levels. If a detail would help, mark it [NEEDS INPUT: ...].
 - When something you need is missing, write [NEEDS INPUT: what is missing] instead of guessing.
 - Write the deliverable in English unless the director asks for another language."""
 
@@ -35,13 +36,15 @@ STAGE_INSTRUCTIONS: dict[TaskStage, str] = {
     ),
     TaskStage.DRAFT: (
         "Stage: draft. Write the complete deliverable in Markdown, following the plan and research above. "
-        "Use only facts that are given; mark gaps with [NEEDS INPUT: ...]."
+        "Use only facts that are given; mark gaps with [NEEDS INPUT: ...]. No status lines, word counts or disclaimers."
     ),
     TaskStage.SELF_CHECK: (
         "Stage: self-check. Check the latest draft against the task, the director's comments and the constraints in the "
-        "profile: invented or inferred facts (remove every claim not supported by the profile, the task or the comments), "
-        "missing requirements, tone, length, language. Fix every problem and return only the corrected final version "
-        "in Markdown, with no remarks about the check."
+        "profile. Go through every sentence about the director: delete it or replace it with [NEEDS INPUT: ...] unless it "
+        "is stated in the profile, the task or the comments (this includes tools, distances, travel times, dates and "
+        "responsibilities). Also check missing requirements, tone, length and language. Return only the corrected "
+        "deliverable in Markdown, optionally followed by a short `## Open items` list of the [NEEDS INPUT] gaps; no status "
+        "lines, word counts, disclaimers or notes about sources or the check."
     ),
 }
 
@@ -76,13 +79,15 @@ def _profile_text(data: StageInput) -> str:
     return "\n".join(f"{label}: {value.strip()}" for label, value in fields if value.strip()) or "(empty)"
 
 
-def sections(data: StageInput) -> tuple[list[Section], list[Section]]:
+def sections(data: StageInput, today: date | None = None) -> tuple[list[Section], list[Section]]:
     """System and user sections in display order, with their cut order (the single place that defines priorities)."""
     system = [
         Section("Your role", data.agent.system_prompt.strip() or f"You are {data.agent.title}."),
         Section("Director profile", _profile_text(data), cut_order=50),
         Section("", RULES),
     ]
+    if today is not None:
+        system.append(Section("Today", f"{today:%A, %d %B %Y}. Dates in the profile before today are in the past."))
     task = f"Title: {data.task.title}\n\n{data.task.description.strip()}".strip()
     user = [Section("Task", task, cut_order=90)]
 
@@ -123,7 +128,9 @@ def fit(system: list[Section], user: list[Section], budget_chars: int) -> tuple[
     return parts[: len(system)], parts[len(system) :]
 
 
-def build_messages(data: StageInput, *, num_ctx: int, reserve_tokens: int) -> list[dict[str, str]]:
+def build_messages(
+    data: StageInput, *, num_ctx: int, reserve_tokens: int, today: date | None = None
+) -> list[dict[str, str]]:
     budget = int(max(num_ctx - reserve_tokens, 1024) * CHARS_PER_TOKEN)
-    system, user = fit(*sections(data), budget)
+    system, user = fit(*sections(data, today), budget)
     return [{"role": "system", "content": _render(system)}, {"role": "user", "content": _render(user)}]

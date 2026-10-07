@@ -9,6 +9,7 @@
 import asyncio
 import json
 from dataclasses import dataclass
+from datetime import date
 
 import httpx
 
@@ -60,7 +61,7 @@ class LlmWorker:
     async def run(self, data: StageInput, report: StageReport) -> StageOutput:
         s = self.settings
         model = self.model_for(data.agent)
-        messages = build_messages(data, num_ctx=s.num_ctx, reserve_tokens=s.reserve_tokens)
+        messages = build_messages(data, num_ctx=s.num_ctx, reserve_tokens=s.reserve_tokens, today=date.today())
         if self._gpu.locked():
             await report.waiting()
         async with self._gpu:
