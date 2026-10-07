@@ -11,7 +11,14 @@ export type Finish = "matte" | "foliage" | "decal" | "glass" | "ghost" | "screen
 export type Part = { shape: Shape; position: Vec3; scale: Vec3; rotation?: Vec3; color: string; finish?: Finish };
 
 export type FloorKind = "reception" | "office";
-export type FloorInput = { number: number; kind: FloorKind; capacity: number; has_director_office: boolean };
+export type FloorInput = {
+  number: number;
+  kind: FloorKind;
+  capacity: number;
+  has_director_office: boolean;
+  has_server_room?: boolean;
+  has_kitchen?: boolean;
+};
 
 export const rectCenter = (r: Rect): [number, number] => [(r.x0 + r.x1) / 2, (r.z0 + r.z1) / 2];
 export const rectSize = (r: Rect): [number, number] => [r.x1 - r.x0, r.z1 - r.z0];

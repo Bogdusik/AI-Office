@@ -23,6 +23,8 @@ export function floorOf(world: WorldState | null, s: Selection): number | null {
       return world?.floors.find((f) => f.id === s.floorId)?.number ?? null;
     case "director":
       return directorFloor(world)?.number ?? null;
+    case "server":
+      return world?.floors.find((f) => f.has_server_room)?.number ?? null;
     case "spot":
       return null;
   }

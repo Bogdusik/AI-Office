@@ -19,7 +19,9 @@ import {
   kitchenLayout,
   loungeLayout,
   officeFurniture,
+  partitionLayout,
   receptionLayout,
+  serverRoomLayout,
   roofLayout,
   stairStorey,
   storeyHeight,
@@ -27,7 +29,7 @@ import {
 import { DIM } from "./dims";
 import { greenery } from "./greenery";
 import * as M from "./models";
-import { type Pick, deskPick, directorPick, spotPick } from "./picks";
+import { type Pick, deskPick, directorPick, serverPick, spotPick } from "./picks";
 import { type Routes, type SiteLayout, routes, siteLayout } from "./site";
 import { type Box, type FloorInput, type Part, type Placement, type Rect, type Vec3, boxIn, cube, part, place, rectCenter, rectSize } from "./types";
 
@@ -97,7 +99,44 @@ function glassRoom(room: Rect, doorGap: { from: number; to: number }, y: number,
   ];
 }
 
-function officeZones(b: BuildingLayout, f: FloorLayout, parts: Part[], walls: Wall[], labels: LabelSpec[], picks: Pick[]) {
+export type SceneOptions = { serverBusy?: boolean };
+
+function serverRoom(b: BuildingLayout, f: FloorLayout, busy: boolean, parts: Part[], walls: Wall[], labels: LabelSpec[], picks: Pick[]) {
+  const y = f.baseY;
+  const s = serverRoomLayout(b.kitchenZone);
+  picks.push(serverPick(f, s.room));
+  parts.push(flat({ x0: s.room.x0 + 0.1, x1: s.room.x1 - 0.1, z0: s.room.z0 + 0.1, z1: s.room.z1 - 0.1 }, y + 0.011, PALETTE.rackPanel));
+  for (const r of s.racks) parts.push(...place(M.serverRack(busy), at(r.position[0], y, r.position[2], r.yaw)));
+  parts.push(...place(M.coolingUnit(), at(s.cooler.position[0], y, s.cooler.position[2], s.cooler.yaw)));
+  walls.push(...glassRoom(s.room, s.doorGap, y, `server-${f.number}`));
+  labels.push({ kind: "sign", key: `server-${f.number}`, position: [s.sign[0], y + s.sign[1], s.sign[2]], text: "SERVER ROOM", size: 0.22, color: "#ffffff", board: PALETTE.rack, faceCamera: false });
+}
+
+function kitchenWithPartition(b: BuildingLayout, f: FloorLayout, parts: Part[], walls: Wall[]) {
+  const y = f.baseY;
+  const k = kitchenLayout(b.kitchenZone);
+  parts.push(...place(M.kitchen(k.counterLength), at(k.counter.position[0], y, k.counter.position[2], k.counter.yaw)));
+  parts.push(...place(M.fridge(), at(k.fridge.position[0], y, k.fridge.position[2], k.fridge.yaw)));
+  parts.push(...place(M.diningTable(), at(k.table.position[0], y, k.table.position[2])));
+  for (const c of k.chairs) parts.push(...place(M.simpleChair(), at(c.position[0], y, c.position[2], c.yaw)));
+  parts.push(...place(M.pottedPlant(), at(k.plant[0], y, k.plant[2])));
+
+  const p = partitionLayout(b);
+  const h = DIM.partition.height;
+  const t = 0.03;
+  walls.push({
+    key: `partition-${f.number}`,
+    normal: [1, 0],
+    solidColor: PALETTE.steel,
+    solid: p.segments.flatMap((seg) => [
+      boxIn({ x0: p.x - 0.05, x1: p.x + 0.05, z0: seg.z0, z1: seg.z1 }, y + h - 0.06, y + h),
+      boxIn({ x0: p.x - 0.05, x1: p.x + 0.05, z0: seg.z0, z1: seg.z1 }, y, y + 0.06),
+    ]),
+    glass: p.segments.map((seg) => boxIn({ x0: p.x - t, x1: p.x + t, z0: seg.z0, z1: seg.z1 }, y + 0.06, y + h - 0.06)),
+  });
+}
+
+function officeZones(b: BuildingLayout, f: FloorLayout, opts: SceneOptions, parts: Part[], walls: Wall[], labels: LabelSpec[], picks: Pick[]) {
   const y = f.baseY;
   if (f.hasDirectorOffice) {
     const room = b.officeRoom;
@@ -118,12 +157,12 @@ function officeZones(b: BuildingLayout, f: FloorLayout, parts: Part[], walls: Wa
     for (const p of l.plants) parts.push(...place(M.pottedPlant(), at(p[0], y, p[2])));
   }
 
-  const k = kitchenLayout(b.kitchenZone);
-  parts.push(...place(M.kitchen(k.counterLength), at(k.counter.position[0], y, k.counter.position[2], k.counter.yaw)));
-  parts.push(...place(M.fridge(), at(k.fridge.position[0], y, k.fridge.position[2], k.fridge.yaw)));
-  parts.push(...place(M.diningTable(), at(k.table.position[0], y, k.table.position[2])));
-  for (const c of k.chairs) parts.push(...place(M.simpleChair(), at(c.position[0], y, c.position[2], c.yaw)));
-  parts.push(...place(M.pottedPlant(), at(k.plant[0], y, k.plant[2])));
+  if (f.hasServerRoom) serverRoom(b, f, opts.serverBusy ?? false, parts, walls, labels, picks);
+  else if (f.hasKitchen) kitchenWithPartition(b, f, parts, walls);
+  else {
+    const [kx, kz] = rectCenter(b.kitchenZone);
+    for (const dz of [-1.5, 1.5]) parts.push(...place(M.pottedPlant(1.2), at(kx, y, kz + dz)));
+  }
 }
 
 function receptionFloor(b: BuildingLayout, f: FloorLayout, parts: Part[], labels: LabelSpec[]) {
@@ -322,7 +361,7 @@ function roofParts(b: BuildingLayout): Part[] {
   ];
 }
 
-export function buildScene(floors: readonly FloorData[], visible: (floorNumber: number) => boolean): SceneSpec {
+export function buildScene(floors: readonly FloorData[], visible: (floorNumber: number) => boolean, opts: SceneOptions = {}): SceneSpec {
   const building = buildingLayout(floors);
   const site = siteLayout(building);
   const entrance = entranceLayout(building, site.roads.main.z0);
@@ -347,7 +386,7 @@ export function buildScene(floors: readonly FloorData[], visible: (floorNumber: 
     if (f.kind === "reception") receptionFloor(building, f, parts, labels);
     else {
       workstations(floor, f, parts, labels, picks);
-      officeZones(building, f, parts, walls, labels, picks);
+      officeZones(building, f, opts, parts, walls, labels, picks);
     }
     coreStorey(building, f, floor, isTop, parts, walls, labels);
   }

@@ -27,6 +27,8 @@ export type CurrentTask = {
   stage: TaskStage | null;
   /** The running stage is queued for the model (GPU); the agent is still "working". */
   waiting_for_model: boolean;
+  /** A web search or page read is running right now. */
+  on_web: boolean;
 };
 
 export type AgentState = {
@@ -51,6 +53,8 @@ export type FloorState = {
   kind: FloorKind;
   capacity: number;
   has_director_office: boolean;
+  has_server_room: boolean;
+  has_kitchen: boolean;
   agents: AgentState[];
 };
 
@@ -58,6 +62,8 @@ export type WorldStats = {
   tasks_in_progress: number;
   awaiting_review: number;
   done_today: number;
+  model_busy: boolean;
+  model_queue: number;
 };
 
 export type WorldState = {
