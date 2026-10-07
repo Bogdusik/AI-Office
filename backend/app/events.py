@@ -56,5 +56,15 @@ def publish_agent(agent_id: int, status: Any) -> None:
     bus.publish("agent", id=agent_id, status=str(status))
 
 
+def publish_run(task_id: int, agent_id: int, run_id: int, status: Any) -> None:
+    """A stage run changed state (e.g. queued for the model → running)."""
+    bus.publish("run", task_id=task_id, agent_id=agent_id, run_id=run_id, status=str(status))
+
+
+def publish_progress(task_id: int, agent_id: int, run_id: int) -> None:
+    """New partial text was saved on a running stage; only open task cards need to refetch."""
+    bus.publish("progress", task_id=task_id, agent_id=agent_id, run_id=run_id)
+
+
 def publish_artifact(task_id: int, agent_id: int, version: int) -> None:
     bus.publish("artifact", task_id=task_id, agent_id=agent_id, version=version)

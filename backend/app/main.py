@@ -34,6 +34,7 @@ def build_executor() -> Executor:
             arrive=settings.executor_arrive_seconds,
             depart=settings.executor_depart_seconds,
             tick=settings.executor_tick_seconds,
+            progress=settings.executor_progress_seconds,
         ),
     )
 
