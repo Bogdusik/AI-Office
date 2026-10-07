@@ -27,6 +27,10 @@ export const DIM = {
   /** Invisible click volumes: a workstation (desk, chair, person, plaque), the director's room, a parked car. */
   pick: { deskW: 2.6, deskBack: 0.7, deskFront: 1.6, height: 2.5, room: 2.7, car: 1.5 },
   carTag: { y: 2.1 },
+  /** Server room in the kitchen zone of its floor; racks stand in a row by the back wall. */
+  server: { inset: 0.35, depth: 4.4, racks: 4, rack: { w: 0.62, d: 1.0, h: 2.0 }, gap: 0.22, leds: 5, door: 1.3 },
+  /** Glass partition between the desks and the kitchen/lounge side, with a doorway. */
+  partition: { height: 2.7, door: 1.8 },
 } as const;
 
 export const CAMERA = {

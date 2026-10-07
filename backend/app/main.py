@@ -10,6 +10,8 @@ from app.api.v1.router import api_router
 from app.core.config import get_settings
 from app.db.session import SessionLocal, engine
 from app.executor import Executor, FakeWorker, LlmSettings, LlmWorker, StageWorker, Timings
+from app.executor.research import WebTools
+from app.web import FetchLimits, PageFetcher, SearxClient
 from app.services.errors import (
     ConflictError,
     DomainError,
@@ -28,6 +30,20 @@ def build_worker() -> StageWorker:
     settings = get_settings()
     if settings.executor_worker == "fake":
         return FakeWorker(settings.executor_stage_seconds)
+    web = WebTools(
+        search=SearxClient(settings.searxng_url, settings.web_tool_timeout_seconds, settings.web_search_results),
+        fetcher=PageFetcher(
+            FetchLimits(
+                timeout=settings.web_tool_timeout_seconds,
+                max_bytes=settings.web_max_bytes,
+                page_chars=settings.web_page_chars,
+            )
+        ),
+        max_calls=settings.web_max_tool_calls,
+        max_pages=settings.web_max_pages,
+        tool_timeout=settings.web_tool_timeout_seconds,
+        stage_timeout=settings.llm_research_timeout_seconds,
+    )
     return LlmWorker(
         LlmSettings(
             url=settings.ollama_url,
@@ -39,7 +55,8 @@ def build_worker() -> StageWorker:
             stage_timeout=settings.llm_stage_timeout_seconds,
             retries=settings.llm_retries,
             reserve_tokens=settings.llm_reserve_tokens,
-        )
+        ),
+        web=web,
     )
 
 

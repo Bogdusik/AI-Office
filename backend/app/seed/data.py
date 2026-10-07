@@ -21,6 +21,8 @@ class FloorSeed:
     name: str
     kind: FloorKind = FloorKind.OFFICE
     has_director_office: bool = False
+    has_server_room: bool = False
+    has_kitchen: bool = False
     capacity: int = 5
 
 
@@ -41,8 +43,8 @@ class AgentSeed:
 
 FLOORS: tuple[FloorSeed, ...] = (
     FloorSeed(number=1, name="Reception", kind=FloorKind.RECEPTION, capacity=0),
-    FloorSeed(number=2, name="Career"),
-    FloorSeed(number=3, name="Engineering", has_director_office=True),
+    FloorSeed(number=2, name="Career", has_kitchen=True),
+    FloorSeed(number=3, name="Engineering", has_director_office=True, has_server_room=True),
 )
 
 AGENTS: tuple[AgentSeed, ...] = (

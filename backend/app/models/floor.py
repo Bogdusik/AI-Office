@@ -24,6 +24,12 @@ class Floor(Base):
             unique=True,
             postgresql_where=text("kind = 'reception'"),
         ),
+        CheckConstraint(
+            "kind = 'office' OR (NOT has_server_room AND NOT has_kitchen)",
+            name="rooms_on_office_floors",
+        ),
+        Index("uq_floors_single_server_room", "has_server_room", unique=True, postgresql_where=text("has_server_room")),
+        Index("uq_floors_single_kitchen", "has_kitchen", unique=True, postgresql_where=text("has_kitchen")),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -36,5 +42,9 @@ class Floor(Base):
     has_director_office: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false"
     )
+    has_server_room: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    """The building's only server room (in the kitchen zone of this floor)."""
+    has_kitchen: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    """The building's only kitchen; set by migration/seed, not through the API."""
 
     agents: Mapped[list["Agent"]] = relationship(back_populates="floor")

@@ -153,6 +153,22 @@ export function kitchen(length: number): Part[] {
   ];
 }
 
+/** A server rack: dark cabinet, front panel and a column of status LEDs (green idle, amber busy). */
+export function serverRack(busy: boolean): Part[] {
+  const { w, d, h } = DIM.server.rack;
+  const led = busy ? PALETTE.ledBusy : PALETTE.ledIdle;
+  return [
+    cube([0, h / 2, 0], [w, h, d], PALETTE.rack),
+    cube([0, h / 2, d / 2 + 0.01], [w - 0.08, h - 0.12, 0.02], PALETTE.rackPanel),
+    ...Array.from({ length: DIM.server.leds }, (_, i) => cube([w / 2 - 0.12, 0.35 + i * 0.32, d / 2 + 0.03], [0.06, 0.06, 0.02], led, "screen")),
+    ...Array.from({ length: 4 }, (_, i) => cube([-0.06, 0.3 + i * 0.42, d / 2 + 0.025], [w - 0.32, 0.12, 0.01], PALETTE.dark)),
+  ];
+}
+
+export function coolingUnit(): Part[] {
+  return [cube([0, 0.9, 0], [0.7, 1.8, 0.6], PALETTE.appliance), cube([0, 1.5, 0.31], [0.5, 0.3, 0.02], PALETTE.steel)];
+}
+
 export function fridge(): Part[] {
   return [
     cube([0, 0.95, 0], [0.75, 1.9, 0.7], PALETTE.appliance),

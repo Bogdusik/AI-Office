@@ -48,6 +48,10 @@ export const PALETTE = {
   trousers: "#4a505b",
   uniform: "#5d6b7d",
   accent: "#ff7a59",
+  rack: "#262b33",
+  rackPanel: "#3a414c",
+  ledIdle: "#3ddc84",
+  ledBusy: "#ffb020",
 } as const;
 
 const OUTFITS = ["#6f8aa6", "#8b9e7c", "#a58c7a", "#7d7a99", "#6f9a9a", "#a3917a", "#8a8f99"] as const;
