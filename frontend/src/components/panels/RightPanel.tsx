@@ -5,6 +5,7 @@ import { useUiStore } from "@/store/useUiStore";
 import { useWorldStore } from "@/store/useWorldStore";
 import { AgentPanel } from "./AgentPanel";
 import { HirePanel } from "./HirePanel";
+import { ServerPanel } from "./ServerPanel";
 import { SpotPanel } from "./SpotPanel";
 import { TaskCard } from "./TaskCard";
 
@@ -23,6 +24,7 @@ export function useRightPanelOpen(): boolean {
       return !!floor && !floor.agents.some((a) => a.desk_index === selection.deskIndex);
     }
     case "spot":
+    case "server":
       return true;
     default:
       return false;
@@ -52,6 +54,8 @@ export function RightPanel() {
     }
     case "spot":
       return <SpotPanel world={world} index={selection.index} />;
+    case "server":
+      return <ServerPanel />;
     default:
       return null;
   }

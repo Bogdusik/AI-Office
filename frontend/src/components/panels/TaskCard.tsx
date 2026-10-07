@@ -9,7 +9,7 @@ import { useFetched } from "@/lib/useFetched";
 import type { LocatedAgent } from "@/lib/world";
 import { useTasksStore } from "@/store/useTasksStore";
 import { useUiStore } from "@/store/useUiStore";
-import { LiveRun, ResultView } from "./ResultView";
+import { LiveRun, ResultView, WebSteps } from "./ResultView";
 import { Button, ConfirmButton, Empty, ErrorNote, PanelShell, Pill, Section, formatDate, formatNumber, inputCls } from "./ui";
 
 const TERMINAL: TaskStatus[] = ["done", "failed", "cancelled"];
@@ -123,6 +123,7 @@ export function TaskCard({ taskId, located }: { taskId: number; located: Located
   const s = task ? TASK_STATUS[task.status] : null;
   const active = task?.runs.findLast((r) => r.status === "running" || r.status === "waiting");
   const failure = task?.runs.findLast((r) => r.status === "failed")?.error;
+  const research = task?.runs.findLast((r) => r.stage === "research" && r.id !== active?.id && r.activity.length > 0);
   const tokens = task?.runs.reduce((n, r) => n + r.input_tokens + r.output_tokens, 0) ?? 0;
 
   return (
@@ -169,6 +170,12 @@ export function TaskCard({ taskId, located }: { taskId: number; located: Located
           <Section title="Результат" count={task.artifacts.length || undefined}>
             <ResultView artifacts={task.artifacts} />
           </Section>
+
+          {research && (
+            <Section title="Поиск в сети" count={research.activity.length} action={<span className="font-mono text-[11px] text-ink/40">v{research.attempt}</span>}>
+              <WebSteps steps={research.activity} />
+            </Section>
+          )}
 
           <Section title="Комментарии" count={task.comments.length}>
             {task.comments.map((c) => (
