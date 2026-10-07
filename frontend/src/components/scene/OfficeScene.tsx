@@ -23,7 +23,8 @@ function World({ world }: { world: WorldState }) {
   const selected = useUiStore((s) => s.selectedFloor);
   const preview = useUiStore((s) => s.preview);
   const floors = useMemo(() => toFloorData(world, preview), [world, preview]);
-  const scene = useMemo(() => buildScene(floors, (n) => isFloorVisible(n, selected)), [floors, selected]);
+  const serverBusy = world.stats.model_busy;
+  const scene = useMemo(() => buildScene(floors, (n) => isFloorVisible(n, selected), { serverBusy }), [floors, selected, serverBusy]);
   const viewport = useThree((s) => s.size);
   const home = useMemo(() => cameraHome(building, site, viewport), [building, site, viewport]);
   const [cx, cz] = rectCenter(site.focus);

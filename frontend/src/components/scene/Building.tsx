@@ -20,6 +20,8 @@ export function toFloorData(world: WorldState, preview: boolean): FloorData[] {
     kind: f.kind,
     capacity: f.capacity,
     has_director_office: f.has_director_office,
+    has_server_room: f.has_server_room,
+    has_kitchen: f.has_kitchen,
     agents: f.agents.map((a) => ({
       id: a.id,
       deskIndex: a.desk_index,

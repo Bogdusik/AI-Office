@@ -4,6 +4,7 @@
  */
 import assert from "node:assert/strict";
 import { RIBBON, ribbonState } from "@/lib/stages";
+import { PALETTE } from "@/scene/palette";
 import { MAP_EDGES, type Vec3, buildScene, inRect, presence, routeGraph } from "@/scene/layout";
 
 type FloorFixture = Parameters<typeof buildScene>[0][number];
@@ -18,7 +19,11 @@ const floor = (number: number, kind: "reception" | "office", capacity: number, o
   agents: Array.from({ length: agents }, (_, i) => ({ id: number * 100 + i, deskIndex: i, roleKey: `r${number}${i}`, title: "T", atDesk: true, carParked: true, status: "S", statusColor: "#000" })),
 });
 
-const standard = [floor(1, "reception", 0), floor(2, "office", 5, false, 4), floor(3, "office", 5, true, 2)];
+const standard = [
+  floor(1, "reception", 0),
+  { ...floor(2, "office", 5, false, 4), has_kitchen: true },
+  { ...floor(3, "office", 5, true, 2), has_server_room: true },
+];
 const plusOne = [...standard, floor(4, "office", 5)];
 
 let checks = 0;
@@ -157,6 +162,25 @@ check("cars and people follow presence in the scene", () => {
   const scene = buildScene([floor(1, "reception", 0), f], () => true);
   const tags = scene.labels.filter((l) => l.kind === "tag").map((l) => l.key);
   assert.deepEqual(tags, [`car-${f.agents[0].id}`]);
+});
+
+check("one server room on its floor, one kitchen with a partition, racks light up when the model is busy", () => {
+  const idle = buildScene(standard, () => true);
+  const busy = buildScene(standard, () => true, { serverBusy: true });
+  const servers = idle.picks.filter((p) => p.target.kind === "server");
+  assert.equal(servers.length, 1);
+  assert.equal(servers[0].floorNumber, 3);
+  assert.deepEqual(idle.walls.filter((w) => w.key.startsWith("partition-")).map((w) => w.key), ["partition-2"]);
+  assert.equal(idle.walls.filter((w) => w.key.startsWith("server-")).length, 3);
+  const leds = (scene: typeof idle, color: string) => scene.parts.filter((p) => p.finish === "screen" && p.color === color).length;
+  assert.ok(leds(idle, PALETTE.ledIdle) >= 20 && leds(idle, PALETTE.ledBusy) === 0);
+  assert.ok(leds(busy, PALETTE.ledBusy) >= 20 && leds(busy, PALETTE.ledIdle) === 0);
+  const fridges = idle.parts.filter((p) => p.color === PALETTE.appliance && p.scale.join() === "0.75,1.9,0.7").length;
+  assert.equal(fridges, 1, "a single kitchen in the building");
+  const b = idle.building;
+  const room = servers[0].box;
+  assert.ok(room.position[0] - room.size[0] / 2 >= b.kitchenZone.x0 && room.position[0] + room.size[0] / 2 <= b.kitchenZone.x1, "server room inside the kitchen zone");
+  assert.equal(buildScene(standard, (n) => n <= 2).picks.filter((p) => p.target.kind === "server").length, 0);
 });
 
 check("stage ribbon follows the task lifecycle", () => {

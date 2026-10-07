@@ -9,6 +9,7 @@ export type Selection =
   | { kind: "agent"; id: number }
   | { kind: "desk"; floorId: number; deskIndex: number }
   | { kind: "director" }
+  | { kind: "server" }
   | { kind: "spot"; index: number };
 
 export function selectionKey(s: Selection): string {
@@ -19,6 +20,8 @@ export function selectionKey(s: Selection): string {
       return `desk:${s.floorId}:${s.deskIndex}`;
     case "director":
       return "director";
+    case "server":
+      return "server";
     case "spot":
       return `spot:${s.index}`;
   }
@@ -50,6 +53,11 @@ export function deskPick(f: FloorLayout, deskIndex: number, target: Selection): 
 export function directorPick(b: BuildingLayout, f: FloorLayout): Pick {
   const [cx, cz] = rectCenter(b.officeRoom);
   return pick({ kind: "director" }, boxIn(b.officeRoom, f.baseY, f.baseY + DIM.pick.room), [cx, f.baseY + 1, cz], f.number);
+}
+
+export function serverPick(f: FloorLayout, room: { x0: number; x1: number; z0: number; z1: number }): Pick {
+  const [cx, cz] = rectCenter(room);
+  return pick({ kind: "server" }, boxIn(room, f.baseY, f.baseY + DIM.pick.room), [cx, f.baseY + 1, cz], f.number);
 }
 
 export function spotPick(spot: ParkingSpot): Pick {
