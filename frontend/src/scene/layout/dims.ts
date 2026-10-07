@@ -25,7 +25,7 @@ export const DIM = {
    * `aisleLane`: offset of the inbound (−) and outbound (+) driving lines from the aisle centre;
    * `endRoom`: free asphalt past the last spot so a car can reverse out; `gate`: pedestrian gap in the west fence.
    */
-  parking: { gap: 5, spotW: 2.7, spotD: 5.2, aisle: 6.5, laneW: 3.6, island: 1.2, curb: 0.6, guestSpots: 2, aisleLane: 1.3, endRoom: 2.8, gate: 1.4, armShort: 0.6 },
+  parking: { gap: 5, spotW: 2.7, spotD: 5.2, aisle: 6.5, laneW: 3.6, island: 1.2, curb: 0.6, guestSpots: 2, aisleLane: 1.3, endRoom: 3.2, gate: 1.4, armShort: 0.6, barrierSetback: 4 },
   fence: { step: 2.5, height: 1.1, inset: 0.4 },
   roof: { parapet: 0.7, thickness: 0.3 },
   /** Invisible click volumes: a workstation (desk, chair, person, plaque), the director's room, a parked car. */
@@ -42,23 +42,23 @@ export const DIM = {
    * (between `paceMin` and `paceMax`) so a trip lasts exactly the backend's duration.
    */
   motion: {
-    walk: 1.7,
-    stairs: 0.9,
-    road: 22,
-    lot: 6,
+    walk: 1.9,
+    stairs: 1,
+    road: 24,
+    lot: 7,
     reverse: 2,
-    brake: 24,
+    brake: 40,
     turn: 2.4,
     getOut: 1.4,
     sit: 1.4,
     tap: 1.4,
-    gateRaise: 1.1,
-    gateClear: 2.6,
+    gateRaise: 0.9,
+    gateClear: 1.8,
     doorOpen: 0.7,
     lift: { speed: 3, doors: 0.9, step: 1.1, hold: 0.8, capacity: 4, home: 4 },
     queueGap: 0.9,
     paceMin: 0.6,
-    paceMax: 1.5,
+    paceMax: 1.3,
     stride: 1.25,
   },
 } as const;
