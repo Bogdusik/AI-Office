@@ -122,6 +122,7 @@ export function TaskCard({ taskId, located }: { taskId: number; located: Located
   const back = located ? () => openTask(null) : () => select(null);
   const s = task ? TASK_STATUS[task.status] : null;
   const active = task?.runs.findLast((r) => r.status === "running" || r.status === "waiting");
+  const failure = task?.runs.findLast((r) => r.status === "failed")?.error;
   const tokens = task?.runs.reduce((n, r) => n + r.input_tokens + r.output_tokens, 0) ?? 0;
 
   return (
@@ -162,6 +163,7 @@ export function TaskCard({ taskId, located }: { taskId: number; located: Located
             {task.description ? <p className="text-sm leading-relaxed whitespace-pre-wrap text-ink/85">{task.description}</p> : <Empty>Без описания.</Empty>}
           </Section>
 
+          {task.status === "failed" && <ErrorNote text={failure ?? "Задача завершилась с ошибкой."} />}
           {active && <LiveRun run={active} />}
 
           <Section title="Результат" count={task.artifacts.length || undefined}>
@@ -187,7 +189,6 @@ export function TaskCard({ taskId, located }: { taskId: number; located: Located
                 <table className="w-full text-xs">
                   <thead className="bg-paper/70 text-left text-ink/50">
                     <tr>
-                      <th className="px-2.5 py-1.5 font-medium">Версия</th>
                       <th className="px-2.5 py-1.5 font-medium">Этап</th>
                       <th className="px-2.5 py-1.5 font-medium">Модель</th>
                       <th className="px-2.5 py-1.5 text-right font-medium">Токены вх/вых</th>
@@ -197,9 +198,12 @@ export function TaskCard({ taskId, located }: { taskId: number; located: Located
                   <tbody>
                     {task.runs.map((r) => (
                       <tr key={r.id} className="border-t border-line">
-                        <td className="px-2.5 py-1.5 font-mono text-ink/60">v{r.attempt}</td>
-                        <td className="px-2.5 py-1.5">{TASK_STAGE[r.stage]}</td>
-                        <td className="px-2.5 py-1.5 font-mono">{r.model ?? r.provider}</td>
+                        <td className="px-2.5 py-1.5 whitespace-nowrap">
+                          <span className="font-mono text-ink/45">v{r.attempt}</span> {TASK_STAGE[r.stage]}
+                        </td>
+                        <td className="max-w-24 truncate px-2.5 py-1.5 font-mono" title={r.model ?? r.provider}>
+                          {r.model ?? r.provider}
+                        </td>
                         <td className="px-2.5 py-1.5 text-right font-mono">
                           {formatNumber(r.input_tokens)} / {formatNumber(r.output_tokens)}
                         </td>
@@ -211,7 +215,7 @@ export function TaskCard({ taskId, located }: { taskId: number; located: Located
                   </tbody>
                   <tfoot>
                     <tr className="border-t border-line bg-paper/50">
-                      <td colSpan={3} className="px-2.5 py-1.5 text-ink/55">
+                      <td colSpan={2} className="px-2.5 py-1.5 text-ink/55">
                         Всего
                       </td>
                       <td className="px-2.5 py-1.5 text-right font-mono font-medium">{formatNumber(tokens)}</td>
