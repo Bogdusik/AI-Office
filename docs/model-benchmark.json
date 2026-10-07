@@ -1,0 +1,38 @@
+{
+  "qwen3.8:27b": {
+    "load_s": 33.4,
+    "gen_tps": 102.6,
+    "prompt_tps": 802.6,
+    "email_tokens": 224,
+    "email_s": 2.3,
+    "think_tokens": 2769,
+    "think_s": 20.3,
+    "vram_mb": 19002,
+    "ps_size_vram_gb": 17.3,
+    "ps_size_gb": 17.3,
+    "ctx": 16384,
+    "tool_ok": true,
+    "tool_args": "{\"title\": \"Portfolio review\", \"date\": \"2026-10-14\", \"duration_minutes\": 30, \"attendees\": [\"anna@example.com\", \"ben@example.com\"]}",
+    "tool_think_ok": true,
+    "email": "Subject: Follow-up: Junior Backend Engineer Role – Alex Morgan\n\nDear Hiring Manager,\n\nI hope this email finds you well. I am writing to follow up on my first-round interview for the Junior Backend Engineer position, which we conducted last Tuesday.\n\nI truly enjoyed our conversation and remain very enthusiastic about the opportunity to join your team in Glasgow. Our discussion regarding the architecture of the FastAPI service and the strategies for optimizing PostgreSQL indexing provided valuable insights into your technical standards and engineering culture. These topics reinforced my interest in contributing to your backend infrastructure, as I am eager to apply my skills in building robust and efficient systems within a dynamic fintech environment.\n\nI understand that the hiring process takes time, but I wanted to briefly reiterate my strong interest in the role. I am confident that my background and passion for backend development align well with the team’s goals. Please let me know if there is any additional information or documentation I can provide to assist in your decision-making process.\n\nThank you again for your time and consideration. I look forward to hearing from you soon.\n\nBest regards,\n\nAlex Morgan",
+    "email_think": "Subject: Follow-Up – Junior Backend Engineer Interview\n\nDear Hiring Manager,\n\nI hope this message finds you well. I am writing to follow up on my first-round interview for the Junior Backend Engineer position, which we conducted last Tuesday.\n\nI truly enjoyed our conversation, particularly our discussion of the FastAPI service and PostgreSQL indexing. These topics reinforced my enthusiasm for the role and for contributing to your team here in Glasgow.\n\nI wanted to reiterate my strong interest in the position and to see if there is any additional information I can provide to support your decision. I would welcome the opportunity to move forward in the process.\n\nThank you again for your time and the thoughtful discussion. I look forward to hearing from you.\n\nBest regards,\nAlex Morgan"
+  },
+  "muse-glimmer:30b": {
+    "load_s": 6.0,
+    "gen_tps": 52.5,
+    "prompt_tps": 1845.2,
+    "email_tokens": 764,
+    "email_s": 14.6,
+    "think_tokens": 2496,
+    "think_s": 48.1,
+    "vram_mb": 17714,
+    "ps_size_vram_gb": 16.5,
+    "ps_size_gb": 16.5,
+    "ctx": 16384,
+    "tool_ok": true,
+    "tool_args": "{\"title\": \"Portfolio review\", \"date\": \"2026-10-14\", \"duration_minutes\": 30, \"attendees\": [\"anna@example.com\", \"ben@example.com\"]}",
+    "tool_think_ok": true,
+    "email": "Dear Hiring Manager,\n\nI am writing to follow up on my first-round interview for the Junior Backend Engineer role, which I attended one week ago on Tuesday.\n\nThank you again for taking the time to speak with me and for sharing insights into the work of the team in Glasgow. I particularly appreciated our discussion about the FastAPI service and PostgreSQL indexing, which was both engaging and directly relevant to my interests.\n\nThe conversation reinforced my enthusiasm for the role and for the opportunity to contribute to your fintech. I remain very interested in progressing to the next stage and am happy to provide any additional information that may be helpful for your decision.\n\nThank you for your consideration. I look forward to hearing from you regarding next steps.\n\nKind regards,\nAlex Morgan",
+    "email_think": "Dear Hiring Manager,\n\nI am writing to follow up on my first-round interview for the Junior Backend Engineer role, which I attended one week ago on Tuesday.\n\nThank you again for taking the time to speak with me. I particularly enjoyed discussing the FastAPI service and PostgreSQL indexing with you, and the conversation reinforced my interest in joining your fintech team in Glasgow.\n\nI remain very enthusiastic about the opportunity to contribute and would welcome any update you are able to provide on the timeline for next steps. Please let me know if there is any additional information I can provide to support your decision making.\n\nThank you for your time and consideration. I look forward to hearing from you.\n\nKind regards,\nAlex Morgan"
+  }
+}
