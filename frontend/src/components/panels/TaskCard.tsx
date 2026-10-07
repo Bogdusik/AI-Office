@@ -158,13 +158,13 @@ export function TaskCard({ taskId, located }: { taskId: number; located: Located
           </dl>
 
           <Actions task={task} />
+          {task.status === "failed" && <ErrorNote text={failure ?? "Задача завершилась с ошибкой."} />}
+          {active && <LiveRun run={active} />}
 
           <Section title="Описание">
             {task.description ? <p className="text-sm leading-relaxed whitespace-pre-wrap text-ink/85">{task.description}</p> : <Empty>Без описания.</Empty>}
           </Section>
 
-          {task.status === "failed" && <ErrorNote text={failure ?? "Задача завершилась с ошибкой."} />}
-          {active && <LiveRun run={active} />}
 
           <Section title="Результат" count={task.artifacts.length || undefined}>
             <ResultView artifacts={task.artifacts} />
