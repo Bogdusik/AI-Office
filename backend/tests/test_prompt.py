@@ -88,3 +88,11 @@ def test_fit_is_deterministic() -> None:
     data = stage_input(D, previous={P: "p" * 30_000, R: "r" * 30_000})
     first = build_messages(data, num_ctx=8192, reserve_tokens=2048)
     assert first == build_messages(data, num_ctx=8192, reserve_tokens=2048)
+
+
+def test_today_is_given_so_past_dates_read_as_past() -> None:
+    from datetime import date
+
+    system = build_messages(stage_input(), num_ctx=16384, reserve_tokens=6144, today=date(2026, 10, 7))[0]["content"]
+    assert "# Today\nWednesday, 07 October 2026. Dates in the profile before today are in the past." in system
+    assert "# Today" not in build_messages(stage_input(), num_ctx=16384, reserve_tokens=6144)[0]["content"]
