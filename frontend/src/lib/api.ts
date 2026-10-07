@@ -31,6 +31,9 @@ export type CurrentTask = {
   on_web: boolean;
 };
 
+/** An agent's latest trip between the map edge and their desk (kept after it ends). */
+export type Trip = { kind: "arrive" | "depart"; started_at: string };
+
 export type AgentState = {
   id: number;
   name: string;
@@ -38,6 +41,8 @@ export type AgentState = {
   title: string;
   desk_index: number;
   status: AgentStatus;
+  status_since: string;
+  trip: Trip | null;
   web_access: boolean;
   current_task: CurrentTask | null;
   queue_length: number;
@@ -66,9 +71,13 @@ export type WorldStats = {
   model_queue: number;
 };
 
+/** Trip lengths (the scene fits each animation into them) and the server clock at the time of the response. */
+export type Motion = { arrive_seconds: number; depart_seconds: number; server_time: string };
+
 export type WorldState = {
   floors: FloorState[];
   stats: WorldStats;
+  motion: Motion;
 };
 
 export type Agent = {

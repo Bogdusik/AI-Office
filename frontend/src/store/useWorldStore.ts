@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { fetchState, type WorldState } from "@/lib/api";
+import { type WorldState, fetchState } from "@/lib/api";
 
 /** Fallback only: server-sent events trigger refreshes as things happen. */
 export const WORLD_POLL_MS = 15000;
@@ -8,6 +8,8 @@ type LoadStatus = "loading" | "ok" | "error";
 
 type WorldStore = {
   world: WorldState | null;
+  /** Server clock minus the browser clock, in ms: trips are timed on the server clock. */
+  clockOffset: number;
   status: LoadStatus;
   lastUpdated: number | null;
   refresh: (signal?: AbortSignal) => Promise<void>;
@@ -16,15 +18,21 @@ type WorldStore = {
 
 export const useWorldStore = create<WorldStore>((set, get) => ({
   world: null,
+  clockOffset: 0,
   status: "loading",
   lastUpdated: null,
 
   refresh: async (signal) => {
     try {
+      const sent = Date.now();
       const next = await fetchState(signal);
+      const received = Date.now();
+      const clockOffset = Date.parse(next.motion.server_time) - (sent + received) / 2;
       const prev = get().world;
-      const changed = prev === null || JSON.stringify(prev) !== JSON.stringify(next);
-      set({ ...(changed ? { world: next } : {}), status: "ok", lastUpdated: Date.now() });
+      // The server time changes on every response; it alone is not a change of the world.
+      const comparable = (w: WorldState) => JSON.stringify({ ...w, motion: { ...w.motion, server_time: "" } });
+      const changed = prev === null || comparable(prev) !== comparable(next);
+      set({ ...(changed ? { world: next } : {}), clockOffset, status: "ok", lastUpdated: received });
     } catch (err) {
       if (signal?.aborted) return;
       console.warn(err);

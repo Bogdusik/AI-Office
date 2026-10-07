@@ -318,6 +318,8 @@ check("presence follows the agent status; preview shows everyone", () => {
   });
   assert.deepEqual(seen, ["off_site:-", "arriving:car", "idle:car+desk", "working:car+desk", "waiting_review:car+desk", "leaving:car"]);
   assert.deepEqual(presence("off_site", true), { atDesk: true, carParked: true });
+  assert.deepEqual(presence("arriving", false, true), { atDesk: false, carParked: false }, "an animated trip draws the car and person itself");
+  assert.deepEqual(presence("leaving", false, true), { atDesk: false, carParked: false });
 });
 
 check("cars and people follow presence in the scene", () => {
