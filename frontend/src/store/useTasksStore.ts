@@ -6,8 +6,11 @@ type TasksStore = {
   loaded: boolean;
   /** Bumped after every change made from the UI so open detail views refetch. */
   revision: number;
+  /** Per task: bumped when a running stage saved new partial text (only the open card refetches). */
+  progress: Record<number, number>;
   refresh: () => Promise<void>;
   bump: () => void;
+  tick: (taskId: number) => void;
 };
 
 let inflight: AbortController | null = null;
@@ -17,6 +20,7 @@ export const useTasksStore = create<TasksStore>((set) => ({
   tasks: [],
   loaded: false,
   revision: 0,
+  progress: {},
   refresh: async () => {
     inflight?.abort();
     const controller = (inflight = new AbortController());
@@ -27,4 +31,5 @@ export const useTasksStore = create<TasksStore>((set) => ({
     }
   },
   bump: () => set((s) => ({ revision: s.revision + 1 })),
+  tick: (taskId) => set((s) => ({ progress: { ...s.progress, [taskId]: (s.progress[taskId] ?? 0) + 1 } })),
 }));

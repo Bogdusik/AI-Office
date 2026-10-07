@@ -1,4 +1,4 @@
-import type { AgentStatus, TaskStage, TaskStatus } from "@/lib/api";
+import type { AgentState, AgentStatus, TaskStage, TaskStatus } from "@/lib/api";
 
 type Tag = { label: string; color: string };
 
@@ -10,6 +10,14 @@ export const AGENT_STATUS: Record<AgentStatus, Tag> = {
   waiting_review: { label: "Ждёт проверки", color: "#8b6cf0" },
   leaving: { label: "Уезжает", color: "#4f8fe8" },
 };
+
+export const WAITING_FOR_MODEL: Tag = { label: "Ждёт модель", color: "#6f9bc6" };
+
+/** Status tag of an agent as shown everywhere: "working" splits into working / waiting for the model. */
+export function agentTag(agent: Pick<AgentState, "status" | "current_task">): Tag {
+  if (agent.status === "working" && agent.current_task?.waiting_for_model) return WAITING_FOR_MODEL;
+  return AGENT_STATUS[agent.status];
+}
 
 export const TASK_STATUS: Record<TaskStatus, Tag> = {
   queued: { label: "В очереди", color: "#7d8796" },
@@ -30,6 +38,7 @@ export const TASK_STAGE: Record<TaskStage, string> = {
 };
 
 export const RUN_STATUS: Record<string, string> = {
+  waiting: "Ждёт модель",
   running: "Идёт",
   succeeded: "Успешно",
   failed: "Ошибка",

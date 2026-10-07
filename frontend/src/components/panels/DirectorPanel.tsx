@@ -3,7 +3,7 @@
 import { type FormEvent, useMemo, useState } from "react";
 import { type FloorState, type Profile, type ProfileUpdate, api } from "@/lib/api";
 import { humanize } from "@/lib/errors";
-import { AGENT_STATUS, TASK_STAGE, TASK_STATUS } from "@/lib/labels";
+import { TASK_STAGE, TASK_STATUS, agentTag } from "@/lib/labels";
 import { useAction } from "@/lib/useAction";
 import { useFetched } from "@/lib/useFetched";
 import { allAgents, findAgent } from "@/lib/world";
@@ -49,7 +49,7 @@ function Team() {
         </thead>
         <tbody>
           {rows.map(({ agent, floor }) => {
-            const s = AGENT_STATUS[agent.status];
+            const s = agentTag(agent);
             const t = agent.current_task;
             return (
               <tr key={agent.id} onClick={() => go(agent.id, floor.number)} className="cursor-pointer border-t border-line transition hover:bg-accent/5">

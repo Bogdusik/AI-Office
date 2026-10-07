@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { API_URL } from "@/lib/config";
 import { refreshAll } from "@/store/actions";
 import { useNotifyStore } from "@/store/useNotifyStore";
+import { useTasksStore } from "@/store/useTasksStore";
 
 /** Coalesces bursts of events (a stage switch emits several) into one refresh. */
 const DEBOUNCE_MS = 80;
@@ -30,6 +31,11 @@ export function EventSync() {
     source.onopen = schedule;
     source.addEventListener("agent", schedule);
     source.addEventListener("artifact", schedule);
+    source.addEventListener("run", schedule);
+    source.addEventListener("progress", (e: MessageEvent<string>) => {
+      const { task_id } = JSON.parse(e.data) as { task_id: number };
+      useTasksStore.getState().tick(task_id);
+    });
     source.addEventListener("task", onTask);
     return () => {
       clearTimeout(timer);

@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { card } from "@/components/panels/ui";
-import { AGENT_STATUS, TASK_STATUS } from "@/lib/labels";
+import { TASK_STATUS, agentTag } from "@/lib/labels";
 import { allAgents, findAgent } from "@/lib/world";
 import { useTasksStore } from "@/store/useTasksStore";
 import { useUiStore } from "@/store/useUiStore";
@@ -35,8 +35,8 @@ export function Search() {
         agentId: agent.id,
         floor: floor.number,
         title: `${agent.title} · ${agent.name}`,
-        sub: `Этаж ${floor.number} · ${AGENT_STATUS[agent.status].label}`,
-        color: AGENT_STATUS[agent.status].color,
+        sub: `Этаж ${floor.number} · ${agentTag(agent).label}`,
+        color: agentTag(agent).color,
       }));
     const found: Result[] = tasks
       .filter((t) => norm(t.title).includes(q))
