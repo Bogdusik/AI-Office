@@ -112,11 +112,24 @@ export type Task = {
 
 export type Comment = { id: number; author: "director" | "agent"; body: string; created_at: string };
 
+export type WebStep = {
+  id: number;
+  kind: "search" | "fetch";
+  target: string;
+  status: "running" | "done" | "failed";
+  detail?: string;
+  source?: number;
+  url?: string;
+};
+
 export type Run = {
   id: number;
   stage: TaskStage;
   attempt: number;
   provider: string;
+  activity: WebStep[];
+  tokens_per_second: number | null;
+  sources: string[];
   model: string | null;
   input_tokens: number;
   output_tokens: number;
@@ -146,6 +159,28 @@ export type LlmStatus = {
   available: boolean | null;
   loaded: boolean | null;
   message: string | null;
+};
+
+export type ModelUser = { agent_id: number; name: string; title: string; task_title: string; stage: TaskStage; since: string };
+export type TokenRow = { agent_id: number; name: string; title: string; today_in: number; today_out: number; total_in: number; total_out: number };
+
+export type ServerRoom = {
+  worker: "fake" | "llm";
+  default_model: string;
+  ollama: {
+    up: boolean;
+    url: string;
+    version: string | null;
+    models: { name: string; size_gb: number; vram_gb: number; context_length: number | null; expires_at: string | null }[];
+  };
+  gpu: { name: string; used_mb: number; total_mb: number; utilization: number } | null;
+  searxng_up: boolean;
+  searxng_url: string;
+  last_speed: { tokens_per_second: number; model: string | null; agent_title: string; finished_at: string | null } | null;
+  queue: ModelUser[];
+  running: ModelUser[];
+  tokens: TokenRow[];
+  totals: { today_in: number; today_out: number; total_in: number; total_out: number };
 };
 
 export type ValidationIssue = { loc: (string | number)[]; msg: string; type: string; ctx?: Record<string, unknown> };
@@ -194,6 +229,7 @@ export const api = {
   cancel: (id: number) => request<TaskDetail>("POST", `/tasks/${id}/cancel`),
   comment: (id: number, body: string) => request<Comment>("POST", `/tasks/${id}/comments`, { body }),
 
+  serverRoom: (signal?: AbortSignal) => request<ServerRoom>("GET", "/server-room", undefined, signal),
   llmStatus: (signal?: AbortSignal) => request<LlmStatus>("GET", "/llm/status", undefined, signal),
 
   profile: (signal?: AbortSignal) => request<Profile>("GET", "/profile", undefined, signal),
