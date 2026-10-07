@@ -5,6 +5,7 @@ export * from "./camera";
 export * from "./dims";
 export * from "./greenery";
 export * from "./models";
+export * from "./moving";
 export * from "./picks";
 export * from "./presence";
 export * from "./site";
