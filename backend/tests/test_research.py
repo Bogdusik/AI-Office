@@ -215,3 +215,13 @@ async def test_cancel_during_a_page_read_stops_the_stage() -> None:
 
 def test_tool_schemas_are_valid_json() -> None:
     assert json.loads(json.dumps(TOOLS))[1]["function"]["parameters"]["required"] == ["url"]
+
+
+async def test_final_result_keeps_the_search_down_note() -> None:
+    notes = f"- from memory (unverified)\n\n{SEARCH_DOWN_NOTE}"
+    data = stage_input(TaskStage.SELF_CHECK, previous={TaskStage.RESEARCH: notes, TaskStage.DRAFT: "draft"})
+    out = await LlmWorker(llm_settings(), FakeOllama([chunks("# Final")]).transport()).run(data, RecordingReport())
+    assert out.text == f"# Final\n\n{SEARCH_DOWN_NOTE}"
+
+    kept = await LlmWorker(llm_settings(), FakeOllama([chunks(f"# Final\n\n{SEARCH_DOWN_NOTE}")]).transport()).run(data, RecordingReport())
+    assert kept.text.count(SEARCH_DOWN_NOTE) == 1

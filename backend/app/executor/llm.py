@@ -91,7 +91,7 @@ class LlmWorker:
         if not turn.content:
             raise StageError("Модель вернула пустой ответ")
         return StageOutput(
-            text=turn.content,
+            text=_keep_web_notes(data, turn.content),
             input_tokens=turn.input_tokens,
             output_tokens=turn.output_tokens,
             tokens_per_second=turn.tokens_per_second,
@@ -182,3 +182,14 @@ class LlmWorker:
             except (httpx.ReadError, httpx.RemoteProtocolError, httpx.WriteError) as err:
                 raise _Retryable(f"Соединение с Ollama оборвалось: {err}") from err
         raise _Retryable("Ollama закрыла поток, не завершив ответ")
+
+
+def _keep_web_notes(data: StageInput, text: str) -> str:
+    """The final result keeps the note that web search was down, even when the model dropped it."""
+    from app.executor.research import SEARCH_DOWN_NOTE
+
+    notes = data.previous_stages.get(TaskStage.RESEARCH, "")
+    if data.stage == TaskStage.SELF_CHECK and SEARCH_DOWN_NOTE in notes and SEARCH_DOWN_NOTE not in text:
+        return f"{text}\n\n{SEARCH_DOWN_NOTE}"
+    return text
+
