@@ -80,7 +80,8 @@ JOBS_ONLY_RESEARCH_INSTRUCTION = (
 
 JOBS_DELIVERABLE_NOTE = (
     "Vacancies: use only the jobs listed under 'Jobs found' in the research notes, with their exact title, company, "
-    "link, posting date and salary; drop the [Jn] numbers. Do not write about excluded vacancies or the eligibility "
+    "link, posting date and salary. Do not cite jobs with [J3] or [3] marks: the job's link is its reference. Keep [n] "
+    "only for facts from numbered web sources, if any. Do not write about excluded vacancies or the eligibility "
     "count: that section is added automatically."
 )
 
