@@ -308,3 +308,48 @@ def test_finalize_does_not_duplicate_blocks_copied_from_the_notes() -> None:
 def test_finalize_without_a_report_changes_nothing() -> None:
     assert finalize("# Result\nhttps://a/2", None) == "# Result\nhttps://a/2"
     assert strip_excluded("keep https://r/1", REPORT) == "keep https://r/1"
+
+
+async def test_a_shown_job_is_withdrawn_when_another_listing_of_it_fails_the_filter() -> None:
+    clean = adzuna_item(1, "Analytics Platform Engineer - Cheltenham", "Oscar Associates", "Cheltenham", description="Python and Kubernetes.")
+    twin = reed_item(1, "Analytics Platform Engineer", "Oscar Associates Limited", "Cheltenham", description="Python. DV Clearance is essential.")
+    calls = iter([{"results": [clean]}, {"results": []}])
+    tools, _, _ = job_tools(lambda r: next(calls), lambda r: {"results": [twin]} if r.url.params.get("keywords") == "platform" else {"results": []})
+    ollama = FakeOllama(
+        [
+            tool_turn("search_jobs", {"query": "python", "location": "Cheltenham"}),
+            tool_turn("search_jobs", {"query": "platform", "location": "Cheltenham"}),
+            chunks("- [J1] Oscar Associates looks good"),
+        ]
+    )
+
+    out = await worker(ollama, tools).run(jobs_input(), RecordingReport())
+
+    second = tool_messages(ollama.requests[2])[1]
+    assert "Withdrawn: J1 is another listing of an excluded vacancy" in second
+    assert out.jobs is not None and out.jobs["jobs"] == []
+    [excluded] = out.jobs["excluded"]
+    assert excluded["ref"] == "J1" and excluded["exclusions"][0]["phrase"] == "DV Clearance"
+    final = finalize("# Shortlist\n- [J1] Oscar Associates — great fit\n- Nothing else", out.jobs)
+    assert final.startswith("# Shortlist\n- Nothing else")
+
+
+async def test_a_guide_page_about_clearance_is_not_an_excluded_vacancy() -> None:
+    guide = "<html><head><title>Vetting levels</title></head><body><article><p>Security Check (SC) clearance needs 5 years of UK residency. This guide explains each level for employers and candidates in detail.</p></article></body></html>"
+
+    async def resolve(host: str, port: int) -> list[str]:
+        return ["93.184.215.14"]
+
+    web = WebTools(
+        search=SearxClient("http://searx.test", transport=searx([])),
+        fetcher=PageFetcher(FetchLimits(page_chars=2000), resolve, sites({"gov.example/vetting": guide})),
+    )
+    tools, _, _ = job_tools()
+    ollama = FakeOllama([tool_turn("fetch_page", {"url": "https://gov.example/vetting"}), chunks("- BPSS is not SC [1]")])
+
+    out = await worker(ollama, tools, web).run(jobs_input(web=True, description="Please review this vacancy: Graduate developer, Leeds. BPSS checks apply."), RecordingReport())
+
+    assert "ELIGIBILITY FILTER" in tool_messages(ollama.requests[1])[0]
+    assert out.jobs is not None and out.jobs["excluded"] == [] and out.jobs["task_flags"] == []
+    final = finalize("Verdict: apply [1]\n\n## Sources\n[1] Vetting levels — https://gov.example/vetting", out.jobs)
+    assert "https://gov.example/vetting" in final and NOT_ELIGIBLE_HEADING not in final
