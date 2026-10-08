@@ -78,7 +78,9 @@ class Run(Base):
     output: Mapped[str] = mapped_column(Text, default="", server_default="")
     sources: Mapped[list[str]] = mapped_column(JSONB, default=list, server_default="[]")
     activity: Mapped[list[dict[str, object]]] = mapped_column(JSONB, default=list, server_default="[]")
-    """Web steps of the stage (searches, pages) as shown to the director."""
+    """Web steps of the stage (searches, pages, job searches) as shown to the director."""
+    jobs: Mapped[dict[str, object] | None] = mapped_column(JSONB)
+    """Vacancies found by the job tools in this stage (`app.jobs.report`), None when they were not used."""
     tokens_per_second: Mapped[float | None] = mapped_column(Float)
     attempt: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -96,6 +98,8 @@ class Artifact(Base):
     version: Mapped[int] = mapped_column(Integer)
     content: Mapped[str] = mapped_column(Text, default="", server_default="")
     sources: Mapped[list[str]] = mapped_column(JSONB, default=list, server_default="[]")
+    jobs: Mapped[dict[str, object] | None] = mapped_column(JSONB)
+    """The vacancies behind this version (eligible and excluded), copied from its research run."""
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     task: Mapped[Task] = relationship(back_populates="artifacts")

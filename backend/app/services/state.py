@@ -28,6 +28,8 @@ def web_step(run: Run | None) -> WebStep | None:
     if kind == "fetch":
         host = urlsplit(str(step.get("url") or target)).hostname or target
         target = host.removeprefix("www.")
+    elif kind == "job":
+        target = target.split(" ", 1)[-1]
     return WebStep(kind=kind, target=target)
 
 
@@ -84,6 +86,7 @@ async def build_state(session: AsyncSession, now: datetime | None = None, settin
                     else None
                 ),
                 web_access=agent.web_access,
+                tools=list(agent.tools or []),
                 current_task=(
                     CurrentTask(
                         id=current.id,

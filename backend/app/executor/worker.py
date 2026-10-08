@@ -30,6 +30,8 @@ class AgentSnapshot:
     system_prompt: str
     model: str | None
     web_access: bool
+    tools: tuple[str, ...] = ()
+    """Tool sets besides the web (`AgentTool` values)."""
 
 
 @dataclass(frozen=True)
@@ -58,6 +60,10 @@ class StageInput:
     """Outputs of the stages already done for this version."""
     previous_results: tuple[str, ...]
     """Earlier versions of the result, oldest first."""
+    jobs: Mapping[str, object] | None = None
+    """What the job tools found in this version's research stage (`job_tools.JobSession.report`)."""
+    job_calls_used: int = 0
+    """Job tool calls already spent on this task (earlier versions and attempts)."""
 
 
 @dataclass(frozen=True)
@@ -68,6 +74,8 @@ class StageOutput:
     sources: tuple[str, ...] = field(default_factory=tuple)
     tokens_per_second: float | None = None
     """Generation speed of the last model call, as reported by the model server."""
+    jobs: Mapping[str, object] | None = None
+    """Job tools report of a research stage, saved on the run."""
 
 
 ActivityStep = dict[str, object]

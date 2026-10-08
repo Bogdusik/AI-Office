@@ -6,7 +6,8 @@ from app.models.enums import ActivityKind, AgentStatus, FloorKind, RunStatus, Ta
 
 
 class WebStep(BaseModel):
-    """The web step running right now: a search (target = query) or a page being read (target = site)."""
+    """The step running right now: a web search (target = query), a page read (target = site), a job search
+    (`jobs`, target = query · place) or a job advert read (`job`, target = job)."""
 
     kind: str
     target: str
@@ -49,6 +50,7 @@ class AgentState(BaseModel):
     activity_log: list[Activity] = []
     """Latest activities, oldest first (the scene replays where the agent has been lately)."""
     web_access: bool
+    tools: list[str] = []
     current_task: CurrentTask | None
     queue_length: int
     awaiting_review: int

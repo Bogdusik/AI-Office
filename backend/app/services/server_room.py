@@ -16,8 +16,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import Settings
 from app.models import Agent, Run, Task
 from app.models.enums import RunProvider, RunStatus
+from app.jobs.sources import STATES
 from app.schemas.server_room import (
     GpuInfo,
+    JobSourceInfo,
     LastSpeed,
     LoadedModel,
     ModelUser,
@@ -79,6 +81,32 @@ class LiveProbes:
 
     async def searxng(self) -> bool:
         return await SearxClient(self.settings.searxng_url).healthy()
+
+
+def job_sources(settings: Settings) -> list[JobSourceInfo]:
+    """Whether each job source has its keys, and how its latest request went (no request is made here)."""
+
+    def has(*values: object) -> bool:
+        return all(v is not None and v.get_secret_value().strip() for v in values)  # type: ignore[attr-defined]
+
+    rows = [
+        ("adzuna", "Adzuna", has(settings.adzuna_app_id, settings.adzuna_app_key)),
+        ("reed", "Reed", has(settings.reed_api_key)),
+    ]
+    infos = []
+    for name, label, configured in rows:
+        state = STATES.get(name)
+        infos.append(
+            JobSourceInfo(
+                name=name,
+                label=label,
+                configured=configured,
+                last_ok_at=state.ok_at if state else None,
+                last_error=state.error if state else None,
+                last_error_at=state.error_at if state else None,
+            )
+        )
+    return infos
 
 
 async def _model_users(session: AsyncSession, status: RunStatus) -> list[ModelUser]:
@@ -143,6 +171,7 @@ async def build_server_room(session: AsyncSession, settings: Settings, probes: P
         gpu=gpu,
         searxng_up=searxng_up,
         searxng_url=settings.searxng_url,
+        job_sources=job_sources(settings),
         last_speed=(
             LastSpeed(
                 tokens_per_second=last[0].tokens_per_second,

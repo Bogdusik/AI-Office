@@ -1,9 +1,9 @@
 from datetime import datetime
 from typing import ClassVar
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.models.enums import AgentStatus, Provider
+from app.models.enums import AgentStatus, AgentTool, Provider
 from app.schemas.common import NonEmptyStr, ORMModel, PatchModel
 
 
@@ -18,7 +18,13 @@ class AgentCreate(BaseModel):
     provider: Provider = Provider.OLLAMA
     model: str | None = Field(default=None, max_length=200)
     web_access: bool = False
+    tools: list[AgentTool] = []
     desk_index: int | None = Field(default=None, ge=0)
+
+    @field_validator("tools")
+    @classmethod
+    def unique_tools(cls, v: list[AgentTool]) -> list[AgentTool]:
+        return list(dict.fromkeys(v))
 
 
 class AgentUpdate(PatchModel):
@@ -32,7 +38,13 @@ class AgentUpdate(PatchModel):
     provider: Provider | None = None
     model: str | None = Field(default=None, max_length=200)
     web_access: bool | None = None
+    tools: list[AgentTool] | None = None
     desk_index: int | None = Field(default=None, ge=0)
+
+    @field_validator("tools")
+    @classmethod
+    def unique_tools(cls, v: list[AgentTool] | None) -> list[AgentTool] | None:
+        return list(dict.fromkeys(v)) if v is not None else v
 
 
 class AgentRead(ORMModel):
@@ -45,6 +57,7 @@ class AgentRead(ORMModel):
     provider: Provider
     model: str | None
     web_access: bool
+    tools: list[str]
     desk_index: int | None
     status: AgentStatus
     archived_at: datetime | None

@@ -310,7 +310,7 @@ class Executor:
             return
         agent, version = started
         await self._set_status(agent_id, AgentStatus.WORKING)
-        stages = rules.task_stages(web_access=agent.web_access, version=version)
+        stages = rules.task_stages(web_access=agent.web_access, version=version, tools=agent.tools)
 
         while not self._stop.is_set():
             begun = await self._begin_stage(task_id, stages, version, agent)
@@ -347,6 +347,7 @@ class Executor:
                 system_prompt=agent.system_prompt,
                 model=agent.model,
                 web_access=agent.web_access,
+                tools=tuple(agent.tools or ()),
             )
             await s.commit()
         if moved:
@@ -392,6 +393,7 @@ class Executor:
             results = (
                 await s.scalars(select(Artifact.content).where(Artifact.task_id == task_id).order_by(Artifact.version))
             ).all()
+            job_reports = (await s.scalars(select(Run.jobs).where(Run.task_id == task_id, Run.jobs.is_not(None)))).all()
             data = StageInput(
                 task=TaskSnapshot(id=task.id, title=task.title, description=task.description),
                 stage=stage,
@@ -407,6 +409,8 @@ class Executor:
                 comments=tuple(CommentSnapshot(c.author, c.body, c.created_at) for c in comments),
                 previous_stages={r.stage: r.output for r in done_runs},
                 previous_results=tuple(results),
+                jobs=next((r.jobs for r in reversed(done_runs) if r.jobs is not None), None),
+                job_calls_used=sum(int(j.get("calls") or 0) for j in job_reports),
             )
             await s.commit()
             run_id = run.id
@@ -470,6 +474,7 @@ class Executor:
                 run.input_tokens = outcome.input_tokens
                 run.output_tokens = outcome.output_tokens
                 run.tokens_per_second = outcome.tokens_per_second
+                run.jobs = dict(outcome.jobs) if outcome.jobs is not None else None
             elif isinstance(outcome, _Cancelled):
                 run.status = RunStatus.CANCELLED
             else:
@@ -498,7 +503,8 @@ class Executor:
                 )
             ).all()
             sources = list(dict.fromkeys(src for r in runs for src in r.sources))
-            s.add(Artifact(task_id=task_id, version=version, content=runs[-1].output if runs else "", sources=sources))
+            jobs = next((r.jobs for r in reversed(runs) if r.jobs is not None), None)
+            s.add(Artifact(task_id=task_id, version=version, content=runs[-1].output if runs else "", sources=sources, jobs=jobs))
             apply_transition(task, TaskStatus.NEEDS_REVIEW, now())
             await s.commit()
         publish_artifact(task_id, task.agent_id, version)
