@@ -10,6 +10,7 @@ import { useWorldStore } from "@/store/useWorldStore";
 import { Building, toFloorData } from "./Building";
 import { CameraRig } from "./CameraRig";
 import { DevProbe } from "./DevProbe";
+import { Motion } from "./motion/Motion";
 
 const SUN_DIRECTION: [number, number, number] = [-0.45, 1, 0.65];
 const SUN_DISTANCE = 120;
@@ -22,7 +23,9 @@ function World({ world }: { world: WorldState }) {
   }, [world]);
   const selected = useUiStore((s) => s.selectedFloor);
   const preview = useUiStore((s) => s.preview);
-  const floors = useMemo(() => toFloorData(world, preview), [world, preview]);
+  const animation = useUiStore((s) => s.animation);
+  const animated = animation && !preview;
+  const floors = useMemo(() => toFloorData(world, preview, animated), [world, preview, animated]);
   const serverBusy = world.stats.model_busy;
   const scene = useMemo(() => buildScene(floors, (n) => isFloorVisible(n, selected), { serverBusy }), [floors, selected, serverBusy]);
   const viewport = useThree((s) => s.size);
@@ -59,6 +62,7 @@ function World({ world }: { world: WorldState }) {
       <Suspense fallback={null}>
         <Building scene={scene} homeZoom={home.zoom} />
       </Suspense>
+      <Motion world={world} scene={scene} enabled={animated} />
     </>
   );
 }

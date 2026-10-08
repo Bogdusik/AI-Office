@@ -94,6 +94,8 @@ export function AgentPanel({ located }: { located: LocatedAgent }) {
   const { agent: state, floor } = located;
   const select = useUiStore((s) => s.select);
   const openTask = useUiStore((s) => s.openTask);
+  const following = useUiStore((s) => s.follow === state.id);
+  const setFollow = useUiStore((s) => s.setFollow);
   const revision = useTasksStore((s) => s.revision);
   const allTasks = useTasksStore((s) => s.tasks);
   const details = useFetched((signal) => api.agent(state.id, signal), [state.id, revision]);
@@ -140,6 +142,9 @@ export function AgentPanel({ located }: { located: LocatedAgent }) {
         <EditForm agent={agent} onDone={() => setEditing(false)} />
       ) : (
         <div className="flex flex-wrap items-center gap-2">
+          <Button variant={following ? "primary" : undefined} onClick={() => setFollow(following ? null : state.id)} aria-pressed={following}>
+            {following ? "Не следить" : "Следить"}
+          </Button>
           <Button onClick={() => setEditing(true)} disabled={!agent}>
             Изменить
           </Button>

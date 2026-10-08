@@ -10,6 +10,7 @@
 
 import asyncio
 import json
+import re
 from dataclasses import dataclass, field
 from datetime import date
 from typing import Any
@@ -90,8 +91,9 @@ class LlmWorker:
         turn = await self.generate(model, messages, report)
         if not turn.content:
             raise StageError("Модель вернула пустой ответ")
+        text = strip_service_lines(turn.content) if data.stage in DELIVERABLE_STAGES else turn.content
         return StageOutput(
-            text=_keep_web_notes(data, turn.content),
+            text=_keep_web_notes(data, text),
             input_tokens=turn.input_tokens,
             output_tokens=turn.output_tokens,
             tokens_per_second=turn.tokens_per_second,
@@ -182,6 +184,29 @@ class LlmWorker:
             except (httpx.ReadError, httpx.RemoteProtocolError, httpx.WriteError) as err:
                 raise _Retryable(f"Соединение с Ollama оборвалось: {err}") from err
         raise _Retryable("Ollama закрыла поток, не завершив ответ")
+
+
+DELIVERABLE_STAGES = frozenset({TaskStage.DRAFT, TaskStage.SELF_CHECK})
+
+_SERVICE_LINE = re.compile(
+    r"^(?:draft\b[^.\n]{0,40}\bfor\b[^.\n]{0,40}\breview\b"
+    r"|(?:this is )?(?:a |the )?draft (?:prepared |written )?for (?:the )?director"
+    r"|(?:status|note)\s*:\s*draft\b"
+    r"|.{0,80}\bnothing (?:here |in this \w+ )?has been (?:sent|submitted|filed|published|applied)\b)",
+    re.IGNORECASE,
+)
+_DECORATION = re.compile(r"^[\s#>*_\-–—:]+|[\s*_]+$")
+_RULE = re.compile(r"^\s*(?:-{3,}|\*{3,}|_{3,})\s*$")
+
+
+def strip_service_lines(text: str) -> str:
+    """Drops the model's status lines ("DRAFT for director review", "nothing has been sent") from a deliverable."""
+    lines = [line for line in text.splitlines() if not _SERVICE_LINE.match(_DECORATION.sub("", line))]
+    while lines and (not lines[0].strip() or _RULE.match(lines[0])):
+        lines.pop(0)
+    while lines and (not lines[-1].strip() or _RULE.match(lines[-1])):
+        lines.pop()
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(lines))
 
 
 def _keep_web_notes(data: StageInput, text: str) -> str:

@@ -128,7 +128,7 @@ async def archive_agent(session: AsyncSession, agent_id: int) -> Agent:
     agent.archived_at = datetime.now(UTC)
     agent.floor_id = None
     agent.desk_index = None
-    agent.status = AgentStatus.OFF_SITE
+    agent.set_status(AgentStatus.OFF_SITE, agent.archived_at)
     await session.commit()
     await session.refresh(agent)
     publish_agent(agent.id, agent.status)

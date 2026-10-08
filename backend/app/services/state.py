@@ -1,12 +1,13 @@
 from collections import defaultdict
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Agent, Floor, Run, Task
 from app.models.enums import RunProvider, RunStatus, TaskStatus
-from app.schemas.state import AgentState, CurrentTask, FloorState, WorldState, WorldStats
+from app.core.config import Settings, get_settings
+from app.schemas.state import AgentState, CurrentTask, FloorState, Motion, Trip, WorldState, WorldStats
 from app.services import rules
 
 
@@ -14,7 +15,9 @@ def start_of_local_day(now: datetime) -> datetime:
     return now.astimezone().replace(hour=0, minute=0, second=0, microsecond=0)
 
 
-async def build_state(session: AsyncSession, now: datetime | None = None) -> WorldState:
+async def build_state(session: AsyncSession, now: datetime | None = None, settings: Settings | None = None) -> WorldState:
+    settings = settings or get_settings()
+    now = now or datetime.now(UTC)
     floors = (await session.scalars(select(Floor).order_by(Floor.number))).all()
     agents = (
         await session.scalars(
@@ -56,6 +59,12 @@ async def build_state(session: AsyncSession, now: datetime | None = None) -> Wor
                 title=agent.title,
                 desk_index=agent.desk_index,
                 status=agent.status,
+                status_since=agent.status_since,
+                trip=(
+                    Trip(kind=agent.trip_kind, started_at=agent.trip_started_at)
+                    if agent.trip_kind is not None and agent.trip_started_at is not None
+                    else None
+                ),
                 web_access=agent.web_access,
                 current_task=(
                     CurrentTask(
@@ -79,7 +88,7 @@ async def build_state(session: AsyncSession, now: datetime | None = None) -> Wor
         .select_from(Task)
         .where(
             Task.status == TaskStatus.DONE,
-            Task.finished_at >= start_of_local_day(now or datetime.now().astimezone()),
+            Task.finished_at >= start_of_local_day(now),
         )
     )
 
@@ -104,5 +113,10 @@ async def build_state(session: AsyncSession, now: datetime | None = None) -> Wor
             done_today=done_today or 0,
             model_busy=model_busy,
             model_queue=len(waiting),
+        ),
+        motion=Motion(
+            arrive_seconds=settings.executor_arrive_seconds,
+            depart_seconds=settings.executor_depart_seconds,
+            server_time=now,
         ),
     )

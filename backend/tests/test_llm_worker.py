@@ -4,7 +4,7 @@ from typing import Any
 import httpx
 import pytest
 
-from app.executor.llm import LlmWorker, ModelMissing, OllamaUnavailable, StageTimeout
+from app.executor.llm import LlmWorker, ModelMissing, OllamaUnavailable, StageTimeout, strip_service_lines
 from app.executor.worker import StageError
 from app.models.enums import RunProvider, TaskStage
 from tests.llm_fixtures import FakeOllama, RecordingReport, chunks, llm_settings, stage_input
@@ -132,3 +132,32 @@ async def test_cancel_closes_the_stream_and_frees_the_gpu() -> None:
 async def _until(check: Any) -> None:
     while not check():
         await asyncio.sleep(0.01)
+
+
+SERVICE_SAMPLES = [
+    "# DRAFT – for Alex's review",
+    "**DRAFT for director review. Nothing here has been sent, filed, or submitted.**",
+    "> Draft for the director's review",
+    "*Status: draft*",
+    "Nothing in this document has been sent or submitted.",
+]
+
+
+@pytest.mark.parametrize("line", SERVICE_SAMPLES)
+def test_service_lines_are_dropped(line: str) -> None:
+    text = f"{line}\n\n# Cover letter\n\nDear team,\n\n---\n\n{line}\n"
+    assert strip_service_lines(text) == "# Cover letter\n\nDear team,"
+
+
+def test_content_mentioning_drafts_stays() -> None:
+    text = "# Draft email to the recruiter — review before sending\n\nI sent my CV last week.\n\n---\n\n## Sources\n1. x"
+    assert strip_service_lines(text) == text
+
+
+async def test_deliverable_stages_drop_service_lines_but_research_keeps_its_notes() -> None:
+    ollama = FakeOllama([chunks("**DRAFT for director review.**\n\nBody"), chunks("**DRAFT for director review.**\n\nBody")])
+    worker = LlmWorker(llm_settings(), ollama.transport())
+    final = await worker.run(stage_input(TaskStage.SELF_CHECK), RecordingReport())
+    notes = await worker.run(stage_input(TaskStage.RESEARCH), RecordingReport())
+    assert final.text == "Body"
+    assert notes.text.startswith("**DRAFT")

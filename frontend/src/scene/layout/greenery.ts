@@ -53,6 +53,6 @@ export function greenery(b: BuildingLayout, site: SiteLayout, entrance: Entrance
   for (let x = lot.x0; x <= lot.x1 + 0.1; x += 5) add(n % 2 ? "deciduous" : "conifer", x, lot.z0 - 4.2, 0.95);
   for (let z = lot.z0 + 1; z < lot.z1 - 1.5; z += 2.3) add("bush", lot.x1 + 1.4, z, 0.8);
   for (let z = lot.z0; z < lot.z1 - 1.5; z += 4.5) add("deciduous", lot.x1 + 4.2, z, 0.9);
-  for (let z = lot.z0 + 2; z < lot.z1 - 4; z += 4) add("bush", lot.x0 - 1.6, z, 0.8);
+  for (let z = lot.z0 + 2; z < lot.z1 - 4; z += 4) if (Math.abs(z - site.aisleZ) > 2) add("bush", lot.x0 - 1.6, z, 0.8);
   return items;
 }
