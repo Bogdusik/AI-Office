@@ -8,6 +8,7 @@ here logs a URL. `STATES` remembers the latest outcome of each source for the se
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from typing import Any, Protocol
+from urllib.parse import urlencode, urlsplit, urlunsplit, parse_qsl
 
 import httpx
 from pydantic import SecretStr
@@ -75,6 +76,13 @@ async def _get_json(label: str, timeout: float, request: Any) -> Any:
         raise SourceError(f"{label} sent a response that is not JSON") from None
 
 
+def _without(url: str, secret: str) -> str:
+    """The link without tracking parameters that carry the app id (Adzuna puts it in `utm_source`)."""
+    parts = urlsplit(url)
+    query = [(k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True) if k not in ("utm_source", "utm_medium") and v != secret]
+    return urlunsplit(parts._replace(query=urlencode(query)))
+
+
 class AdzunaSource:
     name = "adzuna"
     label = "Adzuna"
@@ -124,7 +132,7 @@ class AdzunaSource:
             title=plain_text(item.get("title")),
             company=plain_text((item.get("company") or {}).get("display_name")),
             location=plain_text((item.get("location") or {}).get("display_name")),
-            url=str(item["redirect_url"]),
+            url=_without(str(item["redirect_url"]), self._id),
             description=plain_text(item.get("description")),
             salary_min=number(item.get("salary_min")),
             salary_max=number(item.get("salary_max")),
