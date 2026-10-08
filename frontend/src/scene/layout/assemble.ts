@@ -35,7 +35,7 @@ import { type Routes, type SiteLayout, routes, siteLayout } from "./site";
 import { type Box, type FloorInput, type Part, type Placement, type Rect, type Vec3, boxIn, cube, part, place, rectCenter, rectSize } from "./types";
 
 /** `status`/`statusColor` arrive already localised: the layout only places them. */
-export type AgentInput = { id: number; deskIndex: number; roleKey: string; title: string; atDesk: boolean; carParked: boolean; status: string; statusColor: string };
+export type AgentInput = { id: number; deskIndex: number; roleKey: string; title: string; atDesk: boolean; carParked: boolean; drawn?: boolean; status: string; statusColor: string };
 export type FloorData = FloorInput & { id: number; name: string; agents: AgentInput[] };
 
 export type LabelSpec =
@@ -78,7 +78,7 @@ function workstations(floor: FloorData, f: FloorLayout, parts: Part[], labels: L
     parts.push(...place(M.workstation(agent !== undefined, agent?.atDesk ?? false), at(dx, f.baseY, dz)));
     picks.push(deskPick(f, i, agent ? { kind: "agent", id: agent.id } : { kind: "desk", floorId: floor.id, deskIndex: i }));
     if (!agent) continue;
-    if (agent.atDesk) parts.push(...place(M.seatedPerson(outfitColor(agent.roleKey)), at(t.seat[0], f.baseY + t.seat[1], t.seat[2])));
+    if (agent.atDesk && agent.drawn !== false) parts.push(...place(M.seatedPerson(outfitColor(agent.roleKey)), at(t.seat[0], f.baseY + t.seat[1], t.seat[2])));
     labels.push({ kind: "plaque", key: `plaque-${agent.id}`, position: [t.plaque[0], f.baseY + t.plaque[1], t.plaque[2]], text: agent.title, status: agent.status, statusColor: agent.statusColor });
   }
 }
@@ -101,7 +101,8 @@ function glassRoom(room: Rect, doorGap: { from: number; to: number }, y: number,
   ];
 }
 
-export type SceneOptions = { serverBusy?: boolean };
+/** `liveStaff`: office life animates the receptionists, so the static ones are left out. */
+export type SceneOptions = { serverBusy?: boolean; liveStaff?: boolean };
 
 function serverRoom(b: BuildingLayout, f: FloorLayout, busy: boolean, parts: Part[], walls: Wall[], labels: LabelSpec[], picks: Pick[]) {
   const y = f.baseY;
@@ -119,6 +120,7 @@ function kitchenWithPartition(b: BuildingLayout, f: FloorLayout, parts: Part[], 
   const k = kitchenLayout(b.kitchenZone);
   parts.push(...place(M.kitchen(k.counterLength), at(k.counter.position[0], y, k.counter.position[2], k.counter.yaw)));
   parts.push(...place(M.fridge(), at(k.fridge.position[0], y, k.fridge.position[2], k.fridge.yaw)));
+  parts.push(...place(M.coffeeMachine(), at(k.coffee.position[0], y + k.coffee.position[1], k.coffee.position[2], k.coffee.yaw)));
   parts.push(...place(M.diningTable(), at(k.table.position[0], y, k.table.position[2])));
   for (const c of k.chairs) parts.push(...place(M.simpleChair(), at(c.position[0], y, c.position[2], c.yaw)));
   parts.push(...place(M.pottedPlant(), at(k.plant[0], y, k.plant[2])));
@@ -168,13 +170,13 @@ function officeZones(b: BuildingLayout, f: FloorLayout, opts: SceneOptions, part
   }
 }
 
-function receptionFloor(b: BuildingLayout, f: FloorLayout, parts: Part[], labels: LabelSpec[]) {
+function receptionFloor(b: BuildingLayout, f: FloorLayout, parts: Part[], labels: LabelSpec[], liveStaff: boolean) {
   const y = f.baseY;
   const r = receptionLayout(b);
   parts.push(...place(M.receptionDesk(), at(r.desk.position[0], y, r.desk.position[2], r.desk.yaw)));
   for (const s of r.staff) {
     parts.push(...place(M.officeChair(PALETTE.dark), at(s.position[0], y, s.position[2], s.yaw)));
-    parts.push(...place(M.seatedPerson(PALETTE.uniform), at(s.position[0], y + s.position[1], s.position[2], s.yaw)));
+    if (!liveStaff) parts.push(...place(M.seatedPerson(PALETTE.uniform), at(s.position[0], y + s.position[1], s.position[2], s.yaw)));
   }
   for (const g of r.groups) {
     parts.push(flat(g.rug, y + 0.011, PALETTE.rug));
@@ -367,7 +369,7 @@ export function buildScene(floors: readonly FloorData[], visible: (floorNumber: 
       for (const [x, , z] of columnPositions(building)) parts.push(cube([x, f.baseY + span / 2, z], [0.2, span, 0.2], PALETTE.slabEdge));
     }
     walls.push(...floorWalls(building, f).map((w) => ({ ...w, solidColor: PALETTE.wall })));
-    if (f.kind === "reception") receptionFloor(building, f, parts, labels);
+    if (f.kind === "reception") receptionFloor(building, f, parts, labels, opts.liveStaff ?? false);
     else {
       workstations(floor, f, parts, labels, picks);
       officeZones(building, f, opts, parts, walls, labels, picks);

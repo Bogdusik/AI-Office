@@ -21,6 +21,27 @@ export function agentTag(agent: Pick<AgentState, "status" | "current_task">): Ta
   return AGENT_STATUS[agent.status];
 }
 
+const WRITING: Record<TaskStage, string> = {
+  plan: "Пишет план",
+  research: "Изучает материалы",
+  draft: "Пишет черновик",
+  self_check: "Проверяет результат",
+};
+
+/** Caption above an agent's head in office life, from what is really going on (never generated). */
+export function activityCaption(agent: Pick<AgentState, "status" | "current_task" | "activity_log">): string | null {
+  const now = agent.activity_log.at(-1)?.kind;
+  const task = agent.current_task;
+  if (now === "waiting_model") return "Ждёт модель";
+  if (now === "waiting_review" || agent.status === "waiting_review") return "Ждёт проверки";
+  if (now === "idle" || agent.status === "idle") return "На перерыве";
+  if (agent.status !== "working") return null;
+  if (task?.web_step?.kind === "fetch") return `Читает ${task.web_step.target}`;
+  if (task?.web_step?.kind === "search") return "Ищет в сети";
+  if (task?.run_state === "waiting") return "Ждёт модель";
+  return task?.stage ? WRITING[task.stage] : "Работает";
+}
+
 export const TASK_STATUS: Record<TaskStatus, Tag> = {
   queued: { label: "В очереди", color: "#7d8796" },
   in_progress: { label: "В работе", color: "#f0a020" },

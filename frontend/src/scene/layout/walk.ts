@@ -24,7 +24,8 @@ import type { SiteLayout } from "./site";
 import { type Rect, type Vec3, rectCenter } from "./types";
 
 export type WalkNode = { id: string; p: Vec3; floor: number | null };
-export type WalkEdge = { a: string; b: string; stairs: boolean };
+/** `seat`: the last step onto a seat (sofa), which lies inside the furniture footprint on purpose. */
+export type WalkEdge = { a: string; b: string; stairs: boolean; seat?: boolean };
 export type WalkGraph = { nodes: Map<string, WalkNode>; edges: WalkEdge[]; adjacent: Map<string, { to: string; cost: number }[]> };
 
 /** Node ids the planner and the checks address directly; `f` is the floor index (0 = ground). */
@@ -41,6 +42,13 @@ export const WALK = {
   serverDoor: (f: number) => `f${f}:server`,
   director: (f: number) => `f${f}:director`,
   carSide: (spot: number) => `spot${spot}:side`,
+  /** Coffee queue on the kitchen floor: place 0 is at the machine. */
+  coffee: (f: number, place: number) => `f${f}:coffee${place}`,
+  sofa: (f: number, seat: number) => `f${f}:sofa${seat}`,
+  sofaFront: (f: number, seat: number) => `f${f}:sofa${seat}:front`,
+  window: (f: number, n: number) => `f${f}:window${n}`,
+  /** Conversation places: pair `pair`, side 0 or 1 (they face each other). */
+  talk: (f: number, pair: number, side: number) => `f${f}:talk${pair}:${side}`,
 };
 
 /** Seated agents sit at `seat`; the stair landing is entered through `stairOpening`. */
@@ -53,8 +61,8 @@ class Builder {
     this.nodes.set(id, { id, p, floor });
     return id;
   }
-  link(a: string, b: string, stairs = false) {
-    this.edges.push({ a, b, stairs });
+  link(a: string, b: string, stairs = false, seat = false) {
+    this.edges.push({ a, b, stairs, seat });
   }
   chain(ids: string[]) {
     for (let i = 1; i < ids.length; i++) this.link(ids[i - 1], ids[i]);
@@ -120,7 +128,25 @@ function officeFloor(g: Builder, b: BuildingLayout, f: FloorLayout) {
     }
     g.line(row, 0);
   }
+  // Back corridor along the windows (standing places), joining both side corridors.
+  const backZ = DIM.life.windowZ;
+  const backL = g.add(`f${i}:back:l`, p3(left, y, backZ), i);
+  const backR = g.add(`f${i}:back:r`, p3(right, y, backZ), i);
+  leftIds.push(backL);
+  rightIds.push(backR);
+  const back = [backL, backR];
+  for (let c = 0; c < DIM.deskCols; c++) back.push(g.add(WALK.window(i, c), p3(deskTransform(c).desk[0], y, backZ), i));
+  g.line(back, 0);
   g.line(leftIds, 2);
+
+  // Conversation pair 0: just off the right corridor, behind the last desk column.
+  const pair0 = DIM.life.talkGap;
+  for (let s = 0; s < 2; s++) {
+    const z = backZ + 0.9 + s * pair0;
+    const onLine = g.add(`f${i}:talk0:${s}:line`, p3(right, y, z), i);
+    rightIds.push(onLine);
+    g.link(onLine, g.add(WALK.talk(i, 0, s), p3(right + DIM.life.talkAside, y, z), i));
+  }
 
   const sz = sideCorridorZ(b);
   const side = g.add(`f${i}:side`, p3(b.sideZone.x0 + 0.8, y, sz), i);
@@ -136,6 +162,14 @@ function officeFloor(g: Builder, b: BuildingLayout, f: FloorLayout) {
   }
   g.line(rightIds, 2);
 
+  // Conversation pair 1: by the front windows of the side zone, off the side corridor.
+  for (let s = 0; s < 2; s++) {
+    const x = b.sideZone.x0 + 1.6 + s * DIM.life.talkGap;
+    const onLine = g.add(`f${i}:talk1:${s}:line`, p3(x, y, sz), i);
+    along.push(onLine);
+    g.link(onLine, g.add(WALK.talk(i, 1, s), p3(x, y, b.depth - 1), i));
+  }
+
   if (f.hasDirectorOffice) {
     const o = officeFurniture(b.officeRoom);
     const x = (o.doorGap.from + o.doorGap.to) / 2;
@@ -147,7 +181,21 @@ function officeFloor(g: Builder, b: BuildingLayout, f: FloorLayout) {
     const x = l.sofa.position[0];
     const entry = g.add(`f${i}:lounge:entry`, p3(x, y, sz), i);
     along.push(entry);
-    g.link(entry, g.add(WALK.lounge(i), p3(x, y, l.table[2] + 0.9), i));
+    const lounge = g.add(WALK.lounge(i), p3(x, y, l.table[2] + 0.9), i);
+    g.link(entry, lounge);
+    // Sofa seats are reached from the side, along the strip between the sofa and the table.
+    const sideX = x - DIM.life.sofaSide;
+    const frontZ = l.sofa.position[2] + DIM.life.sofaFront;
+    const turn = g.add(`f${i}:lounge:side`, p3(sideX, y, l.table[2] + 0.9), i);
+    const corner = g.add(`f${i}:lounge:corner`, p3(sideX, y, frontZ), i);
+    g.chain([lounge, turn, corner]);
+    const fronts = [corner];
+    l.seats.forEach((seat, k) => {
+      const front = g.add(WALK.sofaFront(i, k), p3(seat.position[0], y, frontZ), i);
+      fronts.push(front);
+      g.link(front, g.add(WALK.sofa(i, k), p3(seat.position[0], y, seat.position[2]), i), false, true);
+    });
+    g.line(fronts, 0);
   }
 
   if (f.hasServerRoom) {
@@ -160,9 +208,17 @@ function officeFloor(g: Builder, b: BuildingLayout, f: FloorLayout) {
     const k = kitchenLayout(b.kitchenZone);
     const x = b.kitchenZone.x0 + 0.6;
     const entry = g.add(`f${i}:kitchen:entry`, p3(x, y, sz), i);
-    const corner = g.add(`f${i}:kitchen:corner`, p3(x, y, k.counter.position[2] + 1.1), i);
     along.push(entry);
-    g.chain([entry, corner, g.add(WALK.kitchen(i), p3(k.counter.position[0], y, k.counter.position[2] + 1.1), i)]);
+    // Coffee queue down the kitchen corridor: place 0 in front of the machine, the others one step apart.
+    const queue = k.queue.map((p, n) => g.add(WALK.coffee(i, n), p3(p[0], y, p[2]), i));
+    g.chain([entry, ...[...queue].reverse(), g.add(WALK.kitchen(i), p3(k.counter.position[0], y, k.counter.position[2] + 1.1), i)]);
+    // Back from the machine past the queue (not through it), beside the kitchen table, to the side corridor.
+    const exitX = k.queue[0][0] + DIM.life.queueExit;
+    const out1 = g.add(`f${i}:coffee:exit`, p3(exitX, y, k.queue[0][2]), i);
+    const out2 = g.add(`f${i}:coffee:exit2`, p3(exitX, y, k.table.position[2] - 1.4), i);
+    const out3 = g.add(`f${i}:coffee:exit3`, p3(exitX - 0.3, y, sz), i);
+    along.push(out3);
+    g.chain([queue[0], out1, out2, out3]);
   }
   g.line(along, 0);
 }
@@ -256,6 +312,11 @@ export function walkGraph(b: BuildingLayout, site: SiteLayout): WalkGraph {
 
 /** Shortest walk between two nodes (Dijkstra; stairs cost their slower pace). Points include both ends. */
 export function findPath(g: WalkGraph, from: string, to: string): Vec3[] | null {
+  return findPathIds(g, from, to)?.map((id) => g.nodes.get(id)!.p) ?? null;
+}
+
+/** Same as `findPath`, as node ids. */
+export function findPathIds(g: WalkGraph, from: string, to: string): string[] | null {
   if (!g.nodes.has(from) || !g.nodes.has(to)) return null;
   const dist = new Map<string, number>([[from, 0]]);
   const prev = new Map<string, string>();
@@ -281,7 +342,7 @@ export function findPath(g: WalkGraph, from: string, to: string): Vec3[] | null 
   if (!dist.has(to)) return null;
   const ids = [to];
   while (ids[0] !== from) ids.unshift(prev.get(ids[0])!);
-  return ids.map((id) => g.nodes.get(id)!.p);
+  return ids;
 }
 
 /* ---------- obstacles (for checks) ---------- */
