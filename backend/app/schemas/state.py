@@ -2,7 +2,14 @@ from datetime import datetime
 
 from pydantic import BaseModel
 
-from app.models.enums import AgentStatus, FloorKind, TaskStage, TaskStatus, TripKind
+from app.models.enums import ActivityKind, AgentStatus, FloorKind, RunStatus, TaskStage, TaskStatus, TripKind
+
+
+class WebStep(BaseModel):
+    """The web step running right now: a search (target = query) or a page being read (target = site)."""
+
+    kind: str
+    target: str
 
 
 class CurrentTask(BaseModel):
@@ -13,6 +20,9 @@ class CurrentTask(BaseModel):
     waiting_for_model: bool = False
     on_web: bool = False
     """A web search or page read is in progress in the running stage."""
+    run_state: RunStatus | None = None
+    """`waiting` (queued for the model) or `running`; None between stages."""
+    web_step: WebStep | None = None
 
 
 class Trip(BaseModel):
@@ -20,6 +30,11 @@ class Trip(BaseModel):
 
     kind: TripKind
     started_at: datetime
+
+
+class Activity(BaseModel):
+    kind: ActivityKind
+    since: datetime
 
 
 class AgentState(BaseModel):
@@ -31,6 +46,8 @@ class AgentState(BaseModel):
     status: AgentStatus
     status_since: datetime
     trip: Trip | None = None
+    activity_log: list[Activity] = []
+    """Latest activities, oldest first (the scene replays where the agent has been lately)."""
     web_access: bool
     current_task: CurrentTask | None
     queue_length: int

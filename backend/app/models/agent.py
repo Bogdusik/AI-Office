@@ -14,10 +14,11 @@ from sqlalchemy import (
     UniqueConstraint,
     text,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
-from app.models.enums import AgentStatus, Provider, TripKind
+from app.models.enums import ActivityKind, AgentStatus, Provider, TripKind
 from app.models.types import str_enum
 
 if TYPE_CHECKING:
@@ -26,6 +27,9 @@ if TYPE_CHECKING:
 
 
 TRIP_OF = {AgentStatus.ARRIVING: TripKind.ARRIVE, AgentStatus.LEAVING: TripKind.DEPART}
+
+ACTIVITY_LOG_SIZE = 12
+"""Latest activities kept per agent: enough for the scene to replay where the agent has been lately."""
 
 
 class Agent(Base):
@@ -70,6 +74,8 @@ class Agent(Base):
     trip_kind: Mapped[TripKind | None] = mapped_column(str_enum(TripKind, "trip_kind"))
     trip_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     """The latest trip (arriving or leaving); kept after it ends so the scene can plan around it."""
+    activity_log: Mapped[list[dict[str, str]]] = mapped_column(JSONB, default=list, server_default="[]")
+    """Latest activities, oldest first: [{"kind": ActivityKind, "since": ISO time}], at most ACTIVITY_LOG_SIZE."""
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     def set_status(self, status: AgentStatus, at: datetime) -> None:
@@ -80,6 +86,14 @@ class Agent(Base):
         if trip is not None:
             self.trip_kind = trip
             self.trip_started_at = at
+        self.set_activity(ActivityKind(status.value), at)
+
+    def set_activity(self, kind: ActivityKind, at: datetime) -> None:
+        """Appends to the activity log unless the agent is already doing that (a new list, so the JSONB is saved)."""
+        log = list(self.activity_log or [])
+        if log and log[-1].get("kind") == kind:
+            return
+        self.activity_log = [*log, {"kind": kind.value, "since": at.isoformat()}][-ACTIVITY_LOG_SIZE:]
 
     floor: Mapped["Floor | None"] = relationship(back_populates="agents")
     tasks: Mapped[list["Task"]] = relationship(back_populates="agent")
