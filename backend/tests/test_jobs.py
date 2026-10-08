@@ -210,3 +210,16 @@ async def test_details_try_the_source_that_lists_the_job() -> None:
 
     assert (text, error) == ("Full Reed advert.", None)
     assert rd.requests[0].url.path == "/api/1.0/jobs/9"
+
+
+def test_town_in_the_title_and_different_place_names_are_one_vacancy() -> None:
+    full = Job("adzuna", "1", "Analytics Platform Engineer - Cheltenham", "Oscar Associates Limited", "Cheltenham Trade Park, Cheltenham", "https://a/1", "Long advert without the vetting line. " * 5)
+    listing = Job("reed", "2", "Analytics Platform Engineer", "Oscar Associates", "Cheltenham, Gloucestershire", "https://r/2", "Python, Kubernetes. DV Clearance required.")
+    elsewhere = Job("reed", "3", "Analytics Platform Engineer", "Oscar Associates", "Bristol", "https://r/3", "Bristol office.")
+
+    merged = merge([[full], [listing, elsewhere]])
+
+    assert len(merged) == 2
+    one = next(j for j in merged if j.links.get("adzuna"))
+    assert one.links == {"adzuna": "https://a/1", "reed": "https://r/2"}
+    assert one.description.startswith("Long advert") and "DV Clearance required." in one.checked_text
