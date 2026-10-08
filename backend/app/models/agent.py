@@ -79,6 +79,8 @@ class Agent(Base):
     trip_origin_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     """Start of the departure the latest trip continues: a return (turned back on the way) or an arrival
     that came straight back from the map edge. None for an ordinary trip."""
+    leave_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    """«Отпустить всех» lets people go one after another: this agent leaves at this time (the executor does it)."""
     activity_log: Mapped[list[dict[str, str]]] = mapped_column(JSONB, default=list, server_default="[]")
     """Latest activities, oldest first: [{"kind": ActivityKind, "since": ISO time}], at most ACTIVITY_LOG_SIZE."""
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -88,6 +90,9 @@ class Agent(Base):
         `origin`: the start of the departure this trip continues (see `trip_origin_at`)."""
         self.status = status
         self.status_since = at
+        if status not in (AgentStatus.IDLE, AgentStatus.WAITING_REVIEW):
+            # Leaving, or back at work: a planned «go home» no longer applies.
+            self.leave_at = None
         trip = TRIP_OF.get(status)
         if trip is not None:
             self.trip_kind = trip

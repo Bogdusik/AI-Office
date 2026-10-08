@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.db.session import get_db
 from app.schemas.agent import AgentCreate, AgentRead, AgentUpdate, ReleaseAllResult
 from app.services import agents as service
@@ -25,8 +26,9 @@ async def create_agent(data: AgentCreate, db: AsyncSession = Depends(get_db)) ->
 
 @router.post("/release-all", response_model=ReleaseAllResult, status_code=status.HTTP_200_OK)
 async def release_all(db: AsyncSession = Depends(get_db)) -> ReleaseAllResult:
-    """Sends home every agent who can go (in the office, no tasks in progress, queued or with changes requested)."""
-    released, kept = await service.release_all(db)
+    """Sends home every agent who can go (in the office, no tasks in progress, queued or with changes requested),
+    one after another `EXECUTOR_RELEASE_GAP_SECONDS` apart."""
+    released, kept = await service.release_all(db, get_settings().executor_release_gap_seconds)
     return ReleaseAllResult.model_validate({"released": released, "kept": kept})
 
 

@@ -104,6 +104,7 @@ async def build_state(session: AsyncSession, now: datetime | None = None, settin
                 queue_length=sum(t.status == TaskStatus.QUEUED for t in own),
                 awaiting_review=sum(t.status == TaskStatus.NEEDS_REVIEW for t in own),
                 release_blocked=rules.release_blocker(agent.status, (t.status for t in own)),
+                leave_at=agent.leave_at,
             )
         )
 
