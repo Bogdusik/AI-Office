@@ -21,36 +21,58 @@ def _norm(text: str, noise: re.Pattern[str] | None = None) -> str:
     return " ".join(_NON_WORD.sub(" ", text).split())
 
 
-def dedupe_key(job: Job) -> tuple[str, str, str]:
-    """Same company, same title and same town → the same vacancy, whichever site lists it."""
-    town = _norm(job.location.split(",")[0])
-    return _norm(job.company, _COMPANY_SUFFIX), _norm(job.title, _TITLE_NOISE), town
+_GENERIC_PLACE = frozenset({"uk", "united", "kingdom", "england", "scotland", "wales", "gb", "remote", "hybrid", "area"})
+
+
+def _place(job: Job) -> set[str]:
+    return set(_norm(job.location).split()) - _GENERIC_PLACE
+
+
+def same_vacancy(a: Job, b: Job) -> bool:
+    """Same company and same title (town names in the title ignored) in an overlapping place → one vacancy,
+    whichever site lists it ("Engineer - Cheltenham" in "Cheltenham Trade Park" = "Engineer" in "Cheltenham")."""
+    if _norm(a.company, _COMPANY_SUFFIX) != _norm(b.company, _COMPANY_SUFFIX):
+        return False
+    pa, pb = _place(a), _place(b)
+    if pa and pb and not pa & pb:
+        return False
+    places = pa | pb
+
+    def title(job: Job) -> str:
+        return " ".join(w for w in _norm(job.title, _TITLE_NOISE).split() if w not in places)
+
+    return title(a) == title(b)
 
 
 def _copy(job: Job) -> Job:
-    return replace(job, links=dict(job.links), ids=dict(job.ids))
+    return replace(job, links=dict(job.links), ids=dict(job.ids), texts=list(job.texts))
+
+
+def absorb(first: Job, other: Job) -> None:
+    """Folds a duplicate listing into `first`: links, ids and texts kept, gaps filled, the longer text shown."""
+    for source, url in other.links.items():
+        first.links.setdefault(source, url)
+    for source, job_id in other.ids.items():
+        first.ids.setdefault(source, job_id)
+    first.texts += [t for t in other.texts if t not in first.texts]
+    if len(other.description) > len(first.description):
+        first.description, first.full = other.description, other.full
+    if first.salary_min is None and first.salary_max is None:
+        first.salary_min, first.salary_max, first.salary_note = other.salary_min, other.salary_max, other.salary_note
+    first.posted = max(filter(None, (first.posted, other.posted)), default=None)
 
 
 def merge(groups: Sequence[Sequence[Job]]) -> list[Job]:
     """Merges duplicates across sources (and within one); the first listing wins, gaps are filled from the others."""
-    merged: dict[tuple[str, str, str], Job] = {}
+    merged: list[Job] = []
     for jobs in groups:
         for job in jobs:
-            key = dedupe_key(job)
-            first = merged.get(key)
+            first = next((m for m in merged if same_vacancy(m, job)), None)
             if first is None:
-                merged[key] = _copy(job)
-                continue
-            for source, url in job.links.items():
-                first.links.setdefault(source, url)
-            for source, job_id in job.ids.items():
-                first.ids.setdefault(source, job_id)
-            if len(job.description) > len(first.description):
-                first.description, first.full = job.description, job.full
-            if first.salary_min is None and first.salary_max is None:
-                first.salary_min, first.salary_max, first.salary_note = job.salary_min, job.salary_max, job.salary_note
-            first.posted = max(filter(None, (first.posted, job.posted)), default=None)
-    return sorted(merged.values(), key=lambda j: j.posted.toordinal() if j.posted else 0, reverse=True)
+                merged.append(_copy(job))
+            else:
+                absorb(first, job)
+    return sorted(merged, key=lambda j: j.posted.toordinal() if j.posted else 0, reverse=True)
 
 
 @dataclass

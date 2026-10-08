@@ -36,10 +36,18 @@ class Job:
     """Every source that lists this vacancy → its link (duplicates merged across sources)."""
     ids: dict[str, str] = field(default_factory=dict)
     """Every source that lists this vacancy → its id there."""
+    texts: list[str] = field(default_factory=list)
+    """Every text seen for this vacancy (each listing's description, the full advert): the filter reads them all."""
 
     def __post_init__(self) -> None:
         self.links = self.links or {self.source: self.url}
         self.ids = self.ids or {self.source: self.source_id}
+        self.texts = self.texts or [self.description]
+
+    @property
+    def checked_text(self) -> str:
+        """What the eligibility filter reads: the title and every text of every listing."""
+        return "\n".join([self.title, *dict.fromkeys(t for t in (*self.texts, self.description) if t)])
 
     @property
     def salary(self) -> str:
@@ -51,6 +59,7 @@ class Job:
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
+        data.pop("texts")
         data["posted"] = self.posted.isoformat() if self.posted else None
         data["salary"] = self.salary
         return data
