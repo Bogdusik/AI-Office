@@ -17,6 +17,17 @@ CHARS_PER_TOKEN = 3.5
 MIN_KEEP = 200
 """A section cut below this many characters is dropped entirely (only the marker stays)."""
 
+ANSWER_TOKENS: dict[TaskStage, int] = {
+    TaskStage.PLAN: 1024,
+    TaskStage.RESEARCH: 2048,
+    TaskStage.DRAFT: 3072,
+    TaskStage.SELF_CHECK: 3072,
+}
+"""Expected answer length per stage, at least; draft and self-check grow with the document they rewrite."""
+
+MIN_INPUT_TOKENS = 2048
+"""The reserve never takes the context window below this much input."""
+
 RULES = """# House rules
 - The director reviews everything you write before it is used. Never send, publish, submit or apply for anything, and never say you did. Do not label the text as a draft and do not add notes about the review.
 - Do not invent facts: no made-up experience, employers, projects, dates, numbers, names, links or quotes. Use only the director's profile, the task, the director's comments and earlier stage outputs.
@@ -119,12 +130,16 @@ def sections(
         user.append(Section("Director's comment" + (" (latest)" if latest else ""), c.body.strip(), None if latest else 20 + i))
 
     earlier = list(data.previous_stages.items())
+    # self-check corrects the latest draft: it is the last thing to shorten (after the profile and the previous version)
+    latest_cut = 70 if data.stage == TaskStage.SELF_CHECK else 40
     for i, (stage, output) in enumerate(earlier):
         latest = i == len(earlier) - 1
-        user.append(Section(f"Earlier stage: {stage.value}", output.strip(), 40 if latest else 10 + i))
+        user.append(Section(f"Earlier stage: {stage.value}", output.strip(), latest_cut if latest else 10 + i))
 
     if data.previous_results:
-        user.append(Section(f"Previous result (version {data.version - 1})", data.previous_results[-1].strip(), cut_order=60))
+        # self-check checks the latest draft: the previous version gives way to it, not the other way round
+        previous_cut = 35 if data.stage == TaskStage.SELF_CHECK else 60
+        user.append(Section(f"Previous result (version {data.version - 1})", data.previous_results[-1].strip(), cut_order=previous_cut))
 
     instruction = STAGE_INSTRUCTIONS[data.stage]
     if data.stage == TaskStage.RESEARCH and web is not None:
@@ -150,6 +165,29 @@ def fit(system: list[Section], user: list[Section], budget_chars: int) -> tuple[
         parts[index] = replace(parts[index], text=truncate(parts[index].text, max(0, before - excess - 40)))
         excess -= before - len(parts[index].text)
     return parts[: len(system)], parts[len(system) :]
+
+
+def estimate_tokens(text: str) -> int:
+    return int(len(text) / CHARS_PER_TOKEN) + 1
+
+
+def answer_tokens(data: StageInput) -> int:
+    """How long the answer will be: self-check returns the whole latest draft corrected, a revision's draft is
+    about as long as the previous result; both get 25% on top."""
+    expected = ANSWER_TOKENS[data.stage]
+    document = ""
+    if data.stage == TaskStage.SELF_CHECK and data.previous_stages:
+        document = list(data.previous_stages.values())[-1]
+    elif data.stage == TaskStage.DRAFT and data.previous_results:
+        document = data.previous_results[-1]
+    return max(expected, int(estimate_tokens(document) * 1.25))
+
+
+def reserve_tokens(data: StageInput, *, num_ctx: int, minimum: int, think_tokens: int) -> int:
+    """Tokens of the context window kept free for the answer: the model's thinking plus the answer itself, never
+    less than `minimum` (LLM_RESERVE_TOKENS) and never so much that the input gets less than MIN_INPUT_TOKENS."""
+    wanted = max(minimum, think_tokens + answer_tokens(data))
+    return min(wanted, max(num_ctx - MIN_INPUT_TOKENS, minimum))
 
 
 def budget_chars(num_ctx: int, reserve_tokens: int) -> int:
