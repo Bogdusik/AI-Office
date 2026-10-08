@@ -172,7 +172,15 @@ export function TaskCard({ taskId, located }: { taskId: number; located: Located
           </Section>
 
           {research && (
-            <Section title="Поиск в сети" count={research.activity.length} action={<span className="font-mono text-[11px] text-ink/40">v{research.attempt}</span>}>
+            <Section
+              title={research.activity.some((s) => s.kind === "jobs" || s.kind === "job") ? "Поиск вакансий и в сети" : "Поиск в сети"}
+              count={research.activity.length}
+              action={
+                <span className="font-mono text-[11px] text-ink/40">
+                  {research.jobs ? `найдено ${research.jobs.jobs.length + research.jobs.excluded.length}, исключено ${research.jobs.excluded.length} · ` : ""}v{research.attempt}
+                </span>
+              }
+            >
               <WebSteps steps={research.activity.map((step) => (step.status === "running" ? { ...step, status: "failed", detail: "прервано" } : step))} />
             </Section>
           )}

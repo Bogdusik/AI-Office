@@ -31,8 +31,8 @@ export type CurrentTask = {
   on_web: boolean;
   /** `waiting` for the model or `running`; null between stages. */
   run_state: "waiting" | "running" | null;
-  /** The web step running now: search (target = query) or a page being read (target = site). */
-  web_step: { kind: "search" | "fetch"; target: string } | null;
+  /** The step running now: web search (target = query), page read (target = site), job search, job advert read. */
+  web_step: { kind: WebStep["kind"]; target: string } | null;
 };
 
 export type ActivityKind = "off_site" | "arriving" | "working" | "waiting_model" | "waiting_review" | "idle" | "leaving";
@@ -54,6 +54,8 @@ export type AgentState = {
   /** Latest activities, oldest first (office life replays them). */
   activity_log: Activity[];
   web_access: boolean;
+  /** Tool sets besides the web, e.g. "jobs". */
+  tools: AgentTool[];
   current_task: CurrentTask | null;
   queue_length: number;
   awaiting_review: number;
@@ -100,10 +102,14 @@ export type Agent = {
   provider: string;
   model: string | null;
   web_access: boolean;
+  tools: AgentTool[];
   desk_index: number | null;
   status: AgentStatus;
   archived_at: string | null;
 };
+
+/** Tool sets an agent may have besides the web: "jobs" = search_jobs / get_job (Adzuna, Reed). */
+export type AgentTool = "jobs";
 
 export type AgentCreate = {
   floor_id: number;
@@ -114,7 +120,7 @@ export type AgentCreate = {
   system_prompt: string;
 };
 
-export type AgentUpdate = Partial<Pick<Agent, "title" | "system_prompt" | "model" | "web_access">>;
+export type AgentUpdate = Partial<Pick<Agent, "title" | "system_prompt" | "model" | "web_access" | "tools">>;
 
 export type Task = {
   id: number;
@@ -133,12 +139,42 @@ export type Comment = { id: number; author: "director" | "agent"; body: string; 
 
 export type WebStep = {
   id: number;
-  kind: "search" | "fetch";
+  /** search / fetch: the web; jobs: a job search (target = "query · place"); job: reading a job advert. */
+  kind: "search" | "fetch" | "jobs" | "job";
   target: string;
   status: "running" | "done" | "failed";
   detail?: string;
   source?: number;
   url?: string;
+  /** Job search: vacancies found (before the filter) and excluded by it. */
+  found?: number;
+  excluded?: number;
+};
+
+export type JobExclusion = { reason: string; phrase: string };
+
+export type JobRow = {
+  ref: string;
+  title: string;
+  company: string;
+  location: string;
+  url: string;
+  links: Record<string, string>;
+  salary: string;
+  posted: string | null;
+  full: boolean;
+  exclusions: JobExclusion[];
+};
+
+/** What the job tools found for one version: usable vacancies, excluded ones with reasons, failures. */
+export type JobsReport = {
+  calls: number;
+  jobs: JobRow[];
+  excluded: JobRow[];
+  summary: string;
+  failures: Record<string, string>;
+  /** The vacancy in the task itself failed the filter (review mode): no application is prepared. */
+  task_flags: (JobExclusion & { where: string })[];
 };
 
 export type Run = {
@@ -147,6 +183,7 @@ export type Run = {
   attempt: number;
   provider: string;
   activity: WebStep[];
+  jobs: JobsReport | null;
   tokens_per_second: number | null;
   sources: string[];
   model: string | null;
@@ -159,7 +196,7 @@ export type Run = {
   finished_at: string | null;
 };
 
-export type Artifact = { id: number; version: number; content: string; sources: string[]; created_at: string };
+export type Artifact = { id: number; version: number; content: string; sources: string[]; jobs: JobsReport | null; created_at: string };
 
 export type TaskDetail = Task & { comments: Comment[]; runs: Run[]; artifacts: Artifact[] };
 
@@ -195,6 +232,8 @@ export type ServerRoom = {
   gpu: { name: string; used_mb: number; total_mb: number; utilization: number } | null;
   searxng_up: boolean;
   searxng_url: string;
+  /** Job APIs: keys set or not (values never sent) and how the latest request went. */
+  job_sources: { name: string; label: string; configured: boolean; last_ok_at: string | null; last_error: string | null; last_error_at: string | null }[];
   last_speed: { tokens_per_second: number; model: string | null; agent_title: string; finished_at: string | null } | null;
   queue: ModelUser[];
   running: ModelUser[];

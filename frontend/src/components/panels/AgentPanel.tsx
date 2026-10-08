@@ -52,12 +52,13 @@ function EditForm({ agent, onDone }: { agent: Agent; onDone: () => void }) {
   const [prompt, setPrompt] = useState(agent.system_prompt);
   const [model, setModel] = useState(agent.model ?? "");
   const [web, setWeb] = useState(agent.web_access);
+  const [jobs, setJobs] = useState(agent.tools.includes("jobs"));
   const { busy, error, run } = useAction();
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     const saved = await run("save", () =>
-      api.updateAgent(agent.id, { title, system_prompt: prompt, model: model.trim() || null, web_access: web }),
+      api.updateAgent(agent.id, { title, system_prompt: prompt, model: model.trim() || null, web_access: web, tools: jobs ? ["jobs"] : [] }),
     );
     if (saved.ok) onDone();
   };
@@ -76,6 +77,10 @@ function EditForm({ agent, onDone }: { agent: Agent; onDone: () => void }) {
       <label className="flex items-center gap-2 text-sm text-ink">
         <input type="checkbox" checked={web} onChange={(e) => setWeb(e.target.checked)} className="h-4 w-4 accent-[var(--color-accent)]" />
         Доступ в интернет
+      </label>
+      <label className="flex items-center gap-2 text-sm text-ink">
+        <input type="checkbox" checked={jobs} onChange={(e) => setJobs(e.target.checked)} className="h-4 w-4 accent-[var(--color-accent)]" />
+        Поиск вакансий <span className="text-xs text-ink/45">(Adzuna, Reed)</span>
       </label>
       <ErrorNote text={error} />
       <div className="flex justify-end gap-2">
@@ -136,6 +141,7 @@ export function AgentPanel({ located }: { located: LocatedAgent }) {
           {agent ? (agent.model ?? "модель по умолчанию") : "…"}
         </span>
         <span className="rounded-full border border-line px-2.5 py-0.5 text-[11px] text-ink/70">{state.web_access ? "Интернет: есть" : "Интернет: нет"}</span>
+        {state.tools.includes("jobs") && <span className="rounded-full border border-line px-2.5 py-0.5 text-[11px] text-ink/70">Поиск вакансий</span>}
       </div>
 
       {editing && agent ? (
