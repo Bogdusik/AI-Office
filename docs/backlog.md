@@ -2,9 +2,9 @@
 
 Ideas parked for later stages. Don't implement before their stage.
 
-## Agent tools (after stage 6)
+## Agent tools
 
-- `search_jobs` tool for the `job_search` agent: query a jobs API (Adzuna, Reed, or my own SearchWork project) and get structured vacancies (title, company, location, salary, link) instead of reading job-board pages, which often block bots (403) or render in JS.
+- More job sources for `search_jobs` (my own SearchWork project, other official APIs) behind the same `JobSource` protocol.
 
 ## Agents working together (after stage 7)
 

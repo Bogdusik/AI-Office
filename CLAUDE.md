@@ -13,7 +13,8 @@ State lives in the database; the 3D scene only renders it. No business logic in 
 5. Tasks with a fake executor — done
 6. Real AI via Ollama + web search — done (6a local model, 6b web tools and server room)
 7. Life animation — done (7a arrivals and departures, 7b office life)
-- Release v1 — demo mode, public README, CI, MIT licence ← **current**
+- Release v1 — demo mode, public README, CI, MIT licence — done
+- Job search tool — Adzuna + Reed APIs, hard eligibility filter, three modes of the job search agent ← **current**
 8. Polish
 
 Do only the current stage. Don't jump ahead.
@@ -26,9 +27,9 @@ Do only the current stage. Don't jump ahead.
 ## Data model
 - `profile` — single row (`id = 1`): name, summary, goal, constraints, notes (markdown).
 - `floors` — unique `number`, `kind` reception|office (at most one reception), `capacity` (reception = 0 and no agents; office > 0, default 5), `has_director_office`. Standard building: 1 Reception, 2 Career, 3 Engineering (director office).
-- `agents` — on a floor at a `desk_index` (unique per floor, `0..capacity-1`); `role_key` unique among active agents; `provider` ollama|anthropic, optional `model`, `web_access`, scene `status`. Never deleted: `DELETE` archives (`archived_at` set, `floor_id`/`desk_index` cleared). Archived agents are hidden from `/state` and don't count toward capacity.
+- `agents` — on a floor at a `desk_index` (unique per floor, `0..capacity-1`); `role_key` unique among active agents; `provider` ollama|anthropic, optional `model`, `web_access`, `tools` (tool sets besides the web: `jobs`), scene `status`. Never deleted: `DELETE` archives (`archived_at` set, `floor_id`/`desk_index` cleared). Archived agents are hidden from `/state` and don't count toward capacity.
 - `tasks` — per agent (FK `RESTRICT`), `status`, optional `stage` (plan|research|draft|self_check), queue `position`, timestamps.
-- `task_comments` (director|agent), `runs` (one stage of one `attempt` = the artifact version it works towards; `provider` ollama|anthropic|fake, `output` text, `sources`, tokens, status running|succeeded|failed|interrupted|cancelled, error), `artifacts` (versioned markdown + `sources` URL list) — all hang off a task.
+- `task_comments` (director|agent), `runs` (one stage of one `attempt` = the artifact version it works towards; `provider` ollama|anthropic|fake, `output` text, `sources`, `jobs` (job tools report of a research run), tokens, status running|succeeded|failed|interrupted|cancelled, error), `artifacts` (versioned markdown + `sources` URL list + `jobs` copied from the research run) — all hang off a task.
 
 Task status flow (enforced in `app/services/rules.py`, anything else → 409):
 `queued → in_progress → needs_review → done`, `needs_review → changes_requested → in_progress`, `in_progress → paused → queued` (resume puts it at the front of the queue), `in_progress → failed`, any unfinished → `cancelled`.
@@ -115,6 +116,14 @@ Floors: the reception and the director-office floor can't be deleted (409).
 - `run.activity` = web steps {id, kind search|fetch, target, status running|done|failed, detail, source, url}, saved on every change (SSE `run` + `progress`); `/state.current_task.on_web` → label «Ищет в сети». Task card shows steps live and a «Поиск в сети» section after; result shows numbered sources (new tab).
 - `GET /api/v1/server-room`: Ollama (version, loaded models, VRAM), GPU via `nvidia-smi`, SearXNG health, last request speed (`run.tokens_per_second` from Ollama `eval_duration`), who uses the model / queue, tokens today and total per agent (provider `fake` excluded).
 - If Ollama is killed by hand, also kill its `llama-server` runners: an orphaned runner keeps a second copy of the model in VRAM and drops generation to ~25 tok/s.
+
+## Job search tools
+- Agent setting `agents.tools` (list, `AgentTool`: `jobs`); the seed gives `jobs` to `job_search` only. Never check a role or name in code. Research runs when the agent has web access or any tool (`rules.task_stages(..., tools=)`).
+- `app/jobs/`: `sources.py` (Adzuna `api.adzuna.com/v1/api/jobs/gb/search/1`, keys in the query; Reed `www.reed.co.uk/api/1.0/search` + `/jobs/{id}`, basic auth with the key as user, no date filter → filtered in code), `models.py` (`Job`: one shape, `links`/`ids` per source), `search.py` (`JobSearch`: all sources at once, duplicates merged on company + title + town, TTL cache `JOBS_CACHE_SECONDS`, `details()` = full advert: Reed API, Adzuna page through the guarded `PageFetcher`), `eligibility.py` (the hard filter: one `RULES` list, `NEGATION` per sentence, `BASIC_CHECK` before a match; `check(text, director=True)` for the director's own words, where "skip SC roles" is a wish).
+- Keys are `SecretStr` (`ADZUNA_APP_ID`, `ADZUNA_APP_KEY`, `REED_API_KEY`); errors are built in code without the URL (`raise ... from None`), httpx INFO logging is off in `main.py`. Never print `.env` values.
+- `app/executor/job_tools.py`: tools `search_jobs(query, location, days, limit)` and `get_job(job="J3")` in the research loop (`research.py` takes web tools and/or job tools). Excluded vacancies at search time get `X` refs and are never shown; `get_job` re-checks the full text. Pages read with `fetch_page` are checked too; a vacancy whose link is in the task, or the task text itself, that fails → `task_flags`. Limit `JOBS_MAX_CALLS` per task across versions (`StageInput.job_calls_used`). `JobSession.report()` → `runs.jobs` → `StageInput.jobs` for draft/self-check → `artifacts.jobs`.
+- Draft/self-check: jobs only from "Jobs found"; with `task_flags` the instruction is "verdict only, no application". `finalize()` (self-check output, code): verdict block on top, every heading block / list item / line that mentions an excluded vacancy (URL or `Jn`) removed, then `## Not eligible (hard filter)` with reasons and the summary line, and a note for sources that were not searched.
+- Steps: `kind` `jobs` (target "query · place", `found`, `excluded`) and `job` (advert read); `/state.current_task.web_step` → captions «Ищет вакансии», «Читает вакансию». UI: `JobList` in the result (usable / excluded with reason), server room «Источники вакансий» from `app.jobs.sources.STATES` (no extra API calls).
 
 ## Arrivals and departures (stage 7a)
 - Lifecycle rules are unchanged; the animation only shows them. `agents.status_since` (start of the status) and the latest trip (`trip_kind` arrive|depart, `trip_started_at`, kept after it ends) are set by `Agent.set_status`. `/state` gives `status_since`, `trip` per agent and `motion` {`arrive_seconds`, `depart_seconds`, `server_time`}. Trip lengths: `EXECUTOR_ARRIVE_SECONDS` / `EXECUTOR_DEPART_SECONDS` (75 s each; a lone trip at natural speed takes 61–79 s).

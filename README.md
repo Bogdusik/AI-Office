@@ -31,6 +31,11 @@ in English unless a task asks otherwise.
   after a timeout or a dropped stream, and plain-language errors for the director (Ollama not running, model not pulled, timed out).
 - **Web research.** Agents with web access search through a local SearXNG instance and read public pages through a
   guarded fetcher; every claim in the result points to a numbered source.
+- **Job search.** The job search agent queries the official Adzuna and Reed APIs, merges duplicates across them and
+  reads full adverts on demand. A hard filter in code (not the model) drops vacancies that ask for security clearance
+  with a UK residency condition (SC/DV/NPPV), years of UK residency or a nationality from birth; the result lists the
+  excluded ones with the reason and the count. Sent a vacancy that fails it, the agent says so instead of writing an
+  application.
 - **A living building.** Cars queue at the barriers, people wait at the card reader and share the lift (capacity 4),
   walk to the kitchen while the model is busy, sit in the lounge while waiting for review, chat when they are free,
   and leave the same way they came. Click any agent, desk, parking spot or the server room to open its panel.
@@ -91,6 +96,13 @@ new trips appear) without a browser.
 its request is really sent, then `running`. The stage timeout counts from sending, not from joining the queue, and the
 GPU slot is held per model call, never while a web tool runs. The queue is visible: waiting agents lean back, then go
 for coffee, and the server room lists who has the model and who is next.
+
+**A hard filter in code for job eligibility.** Whether a vacancy is out of reach (security clearance with a UK
+residency condition, years of UK residency, nationality from birth) is decided by one list of patterns in
+`app/jobs/eligibility.py`, tested on real advert wording both ways ("SC cleared" counts, "SC Johnson", "DV360" and
+"SC clearance is not required" do not; BPSS alone does not). Excluded vacancies never reach the model; one that fails
+when its full advert is read is withdrawn; and the final text is post-processed so that no line mentions an excluded
+vacancy, followed by the excluded list with reasons and the count.
 
 **Guarded web tools.** The fetcher accepts only http/https on standard ports with no credentials in the URL. It resolves
 the host and refuses any non-global address (private, loopback, link-local, CGNAT, IPv4-mapped), then connects to that
@@ -172,6 +184,22 @@ can use a different model: «Изменить» in its panel → «Модель�
 also starts SearXNG on `127.0.0.1:8888`. Agents with «Доступ в интернет» then search and read pages during the
 research stage.
 
+**Job search.** The job search agent has the «Поиск вакансий» tool (an agent setting: «Изменить» → «Поиск вакансий»).
+Get free keys at [developer.adzuna.com](https://developer.adzuna.com) and
+[reed.co.uk/developers/jobseeker](https://www.reed.co.uk/developers/jobseeker) and put them into `backend/.env`:
+
+```env
+ADZUNA_APP_ID=...
+ADZUNA_APP_KEY=...
+REED_API_KEY=...
+```
+
+A source without keys is skipped and the result says so; the server room shows whether each source has keys and how
+its latest request went (the keys themselves are never shown or logged). `JOBS_MAX_CALLS` (10 per task),
+`JOBS_CACHE_SECONDS` (600) and `JOBS_TIMEOUT_SECONDS` (15) tune the tools. The agent works in three modes, picked from
+the task: search ("find junior Python roles in Leeds"), review (paste a vacancy or its link) and application (tailored
+CV points and a cover letter); it never applies for anything.
+
 ## Start and stop with one command (Windows)
 
 After the first-time setup above, two scripts in the repository root run everything:
@@ -224,8 +252,6 @@ From [`docs/backlog.md`](docs/backlog.md):
 
 - **Agents working together:** an agent hands part of a task to a colleague or asks them to review it (a sub-task with
   its own runs); in the scene they walk over to the colleague's desk.
-- **Structured tools:** a `search_jobs` tool for the job search agent that queries a jobs API instead of scraping
-  job-board pages.
 - **Polish:** materials per zone, decorative lighting, pictures on the walls, traffic lights; an interior with rooms,
   doors and a corridor in a larger building.
 
