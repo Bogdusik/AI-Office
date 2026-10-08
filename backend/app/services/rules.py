@@ -44,13 +44,13 @@ EXECUTOR_PICK_ORDER: tuple[TaskStatus, ...] = (
 """What an agent works on next: unfinished work first (after a restart), then rework, then the queue."""
 
 
-def task_stages(*, web_access: bool, version: int) -> tuple[TaskStage, ...]:
+def task_stages(*, web_access: bool, version: int, tools: Sequence[str] = ()) -> tuple[TaskStage, ...]:
     """Stages that produce result `version`. Rework (version 2+) skips the plan and starts from the
-    director's comments and the previous result; research needs web access. The single place to change it."""
+    director's comments and the previous result; research needs web access or a tool. The single place to change it."""
     stages: list[TaskStage] = []
     if version <= 1:
         stages.append(TaskStage.PLAN)
-    if web_access:
+    if web_access or tools:
         stages.append(TaskStage.RESEARCH)
     stages += [TaskStage.DRAFT, TaskStage.SELF_CHECK]
     return tuple(stages)

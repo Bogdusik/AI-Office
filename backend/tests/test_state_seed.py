@@ -44,6 +44,10 @@ def test_seed_prompts_share_rules() -> None:
         assert COMMON_RULES in agent.system_prompt
     portfolio_evidence = next(a for a in AGENTS if a.role_key == "portfolio_evidence")
     assert "public achievements" in portfolio_evidence.system_prompt
+    assert {a.role_key: a.tools for a in AGENTS if a.tools} == {"job_search": ("jobs",)}
+    job_search = next(a for a in AGENTS if a.role_key == "job_search")
+    for mode in ("Search (", "Review (", "Application ("):
+        assert mode in job_search.system_prompt
 
 
 async def test_state_after_seed(client: AsyncClient, db: AsyncSession) -> None:

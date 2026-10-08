@@ -1,6 +1,7 @@
 from functools import lru_cache
 from typing import Literal
 
+from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -41,6 +42,16 @@ class Settings(BaseSettings):
     web_max_bytes: int = 2_000_000
     web_tool_timeout_seconds: float = 15.0
     web_search_results: int = 8
+
+    adzuna_app_id: SecretStr | None = None
+    adzuna_app_key: SecretStr | None = None
+    reed_api_key: SecretStr | None = None
+    """Job API keys: secrets, never printed or logged (an empty value means "not configured")."""
+    jobs_max_calls: int = 10
+    """search_jobs + get_job calls per task, across all its versions."""
+    jobs_cache_seconds: float = 600.0
+    jobs_timeout_seconds: float = 15.0
+    jobs_max_results: int = 50
 
 
 @lru_cache

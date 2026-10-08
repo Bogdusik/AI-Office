@@ -65,6 +65,7 @@ async def run_seed(session: AsyncSession) -> SeedReport:
                 title=agent_spec.title,
                 system_prompt=agent_spec.system_prompt,
                 web_access=agent_spec.web_access,
+                tools=list(agent_spec.tools),
             )
         )
         report.created.append(f"agent {agent_spec.role_key}")

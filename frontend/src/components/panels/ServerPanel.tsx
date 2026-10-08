@@ -94,6 +94,22 @@ export function ServerPanel() {
             </div>
           </Section>
 
+          <Section title="Источники вакансий">
+            <div className="flex flex-col gap-1.5" data-testid="job-sources">
+              {room.job_sources.map((s) => {
+                const failedLast = s.last_error_at !== null && (s.last_ok_at === null || s.last_error_at > s.last_ok_at);
+                const detail = !s.configured
+                  ? "нет ключей в backend/.env"
+                  : failedLast
+                    ? `${s.last_error} · ${formatDate(s.last_error_at)}`
+                    : s.last_ok_at
+                      ? `ключи заданы · последний запрос ${formatDate(s.last_ok_at)}`
+                      : "ключи заданы · запросов ещё не было";
+                return <Dot key={s.name} ok={s.configured && !failedLast} label={s.label} detail={detail} />;
+              })}
+            </div>
+          </Section>
+
           <Section title="Модель">
             <div className="grid grid-cols-2 gap-2" data-testid="server-model">
               <Stat label="Загружена" value={model ? model.name : "—"} sub={model ? `контекст ${formatNumber(model.context_length ?? 0)}` : `по умолчанию ${room.default_model}`} />
