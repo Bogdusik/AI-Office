@@ -49,9 +49,16 @@ async def run_seed(session: AsyncSession) -> SeedReport:
         if exists is not None:
             report.skipped.append(f"agent {agent_spec.role_key}")
             continue
+        floor = floors[agent_spec.floor_number]
+        desk_taken = await session.scalar(
+            select(Agent.id).where(Agent.floor_id == floor.id, Agent.desk_index == agent_spec.desk_index).limit(1)
+        )
+        if desk_taken is not None:
+            report.skipped.append(f"agent {agent_spec.role_key} (desk taken)")
+            continue
         session.add(
             Agent(
-                floor_id=floors[agent_spec.floor_number].id,
+                floor_id=floor.id,
                 desk_index=agent_spec.desk_index,
                 role_key=agent_spec.role_key,
                 name=agent_spec.name,
