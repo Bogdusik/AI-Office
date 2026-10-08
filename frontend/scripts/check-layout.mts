@@ -150,6 +150,13 @@ for (const [label, floors, expectedSpots] of [
     assert.ok(targets.length > 10);
     for (const id of targets) assert.ok(findPath(walk, WALK.outsideDoor, id), `${id} reachable from the entrance`);
     for (const s of site.spots) assert.ok(findPath(walk, WALK.carSide(s.index), WALK.reader), `reader reachable from spot ${s.index}`);
+    const kitchen = building.floors.find((f) => f.hasKitchen)!;
+    const places = [0, 1, 2, 3].map((n) => WALK.coffee(kitchen.index, n));
+    places.push(...[0, 1, 2].flatMap((n) => [WALK.sofa(kitchen.index, n), WALK.sofaFront(kitchen.index, n)]));
+    for (const f of building.floors.filter((x) => x.kind === "office")) {
+      places.push(...[0, 1, 2].map((n) => WALK.window(f.index, n)), ...[0, 1].flatMap((p) => [WALK.talk(f.index, p, 0), WALK.talk(f.index, p, 1)]));
+      for (let d = 0; d < f.capacity; d++) for (const id of places) assert.ok(findPath(walk, WALK.seat(f.index, d), id), `${id} reachable from desk ${f.index}/${d}`);
+    }
     for (const f of building.floors) {
       assert.ok(walk.nodes.has(WALK.lift(f.index)), `lift stop on floor ${f.number}`);
       assert.ok(findPath(walk, WALK.lift(0), WALK.lift(f.index)), `stairs reach floor ${f.number}`);
@@ -164,6 +171,7 @@ for (const [label, floors, expectedSpots] of [
     const byFloor = building.floors.map((f) => floorObstacles(building, f));
     let tested = 0;
     for (const e of walk.edges) {
+      if (e.seat) continue;
       const a = walk.nodes.get(e.a)!;
       const c = walk.nodes.get(e.b)!;
       const floorIndex = a.floor ?? c.floor;

@@ -169,6 +169,21 @@ export function coolingUnit(): Part[] {
   return [cube([0, 0.9, 0], [0.7, 1.8, 0.6], PALETTE.appliance), cube([0, 1.5, 0.31], [0.5, 0.3, 0.02], PALETTE.steel)];
 }
 
+/** Coffee machine standing on the counter (origin on the counter top), front +z. */
+export function coffeeMachine(): Part[] {
+  return [
+    cube([0, 0.2, 0], [0.32, 0.4, 0.34], PALETTE.dark),
+    cube([0, 0.03, 0.08], [0.24, 0.04, 0.16], PALETTE.steel),
+    cube([0, 0.26, 0.172], [0.16, 0.08, 0.01], PALETTE.screenOn, "screen"),
+    part("cylinder", [0, 0.09, 0.07], [0.08, 0.1, 0.08], PALETTE.mug),
+  ];
+}
+
+/** A mug; origin on the surface it stands on. */
+export function mug(): Part[] {
+  return [part("cylinder", [0, 0.05, 0], [0.08, 0.1, 0.08], PALETTE.mug), cube([0.05, 0.05, 0], [0.025, 0.05, 0.012], PALETTE.mug)];
+}
+
 export function fridge(): Part[] {
   return [
     cube([0, 0.95, 0], [0.75, 1.9, 0.7], PALETTE.appliance),

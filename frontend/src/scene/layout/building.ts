@@ -231,13 +231,15 @@ export function officeFurniture(room: Rect): OfficeFurniture {
   };
 }
 
-export type LoungeLayout = { sofa: Placement; table: Vec3; plants: Vec3[] };
+/** `seats`: where people sit on the sofa (seat surface height comes from DIM.life), facing +z. */
+export type LoungeLayout = { sofa: Placement; table: Vec3; plants: Vec3[]; seats: Placement[] };
 
 export function loungeLayout(zone: Rect): LoungeLayout {
   const [cx, cz] = rectCenter(zone);
   return {
     sofa: { position: [cx, 0, cz - 0.6], yaw: 0 },
-    table: [cx, 0, cz + 0.7],
+    table: [cx, 0, cz + 0.95],
+    seats: [-0.75, 0, 0.75].map((dx) => ({ position: [cx + dx, 0, cz - 0.6 + 0.1] as Vec3, yaw: Math.PI })),
     plants: [
       [cx + 2.2, 0, cz - 0.8],
       [zone.x0 + 0.6, 0, zone.z0 + 0.6],
@@ -245,7 +247,8 @@ export function loungeLayout(zone: Rect): LoungeLayout {
   };
 }
 
-export type KitchenLayout = { counter: Placement; counterLength: number; fridge: Placement; table: Placement; chairs: Placement[]; plant: Vec3 };
+/** `coffee`: machine on the counter; `queue`: where people wait for it, place 0 in front of the machine. */
+export type KitchenLayout = { counter: Placement; counterLength: number; fridge: Placement; table: Placement; chairs: Placement[]; plant: Vec3; coffee: Placement; queue: Vec3[] };
 
 export function kitchenLayout(zone: Rect): KitchenLayout {
   const [cx, cz] = rectCenter(zone);
@@ -263,6 +266,11 @@ export function kitchenLayout(zone: Rect): KitchenLayout {
       { position: [cx + 0.5, 0, tableZ + 0.75], yaw: 0 },
     ],
     plant: [zone.x1 - 0.6, 0, zone.z1 - 0.6],
+    coffee: { position: [zone.x0 + 0.75, 0.94, zone.z0 + 0.42], yaw: 0 },
+    queue: [
+      [zone.x0 + 0.75, 0, zone.z0 + 1.45],
+      ...[2.35, 3.25, 4.15].map((dz) => [zone.x0 + 0.6, 0, zone.z0 + dz] as Vec3),
+    ],
   };
 }
 

@@ -35,6 +35,12 @@ export const DIM = {
   server: { inset: 0.35, depth: 4.4, racks: 4, rack: { w: 0.62, d: 1.0, h: 2.0 }, gap: 0.22, leds: 5, door: 1.3 },
   /** Glass partition between the desks and the kitchen/lounge side, with a doorway. */
   partition: { height: 2.7, door: 1.8 },
+  /**
+   * Office life (stage 7b). `windowZ`: back corridor along the windows; `talkGap`: distance between two people
+   * talking; `talkAside`: conversation places stand this far off the right corridor; sofa seats are reached from
+   * `sofaSide` left of the lounge centre along a strip `sofaFront` in front of the sofa.
+   */
+  life: { windowZ: 0.65, talkGap: 0.95, talkAside: 0.4, sofaSide: 1.65, sofaFront: 0.83 },
   /** Walking graph: a person's clearance radius and the stair opening from a floor to its landing. */
   walk: { radius: 0.28, stairDoor: 1.05, readerStand: 0.55, carSide: 1.35, outside: 0.8, inside: 0.7 },
   /**
