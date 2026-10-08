@@ -29,7 +29,15 @@ export type CurrentTask = {
   waiting_for_model: boolean;
   /** A web search or page read is running right now. */
   on_web: boolean;
+  /** `waiting` for the model or `running`; null between stages. */
+  run_state: "waiting" | "running" | null;
+  /** The web step running now: search (target = query) or a page being read (target = site). */
+  web_step: { kind: "search" | "fetch"; target: string } | null;
 };
+
+export type ActivityKind = "off_site" | "arriving" | "working" | "waiting_model" | "waiting_review" | "idle" | "leaving";
+/** One entry of an agent's activity log (`since` ISO time). */
+export type Activity = { kind: ActivityKind; since: string };
 
 /** An agent's latest trip between the map edge and their desk (kept after it ends). */
 export type Trip = { kind: "arrive" | "depart"; started_at: string };
@@ -43,6 +51,8 @@ export type AgentState = {
   status: AgentStatus;
   status_since: string;
   trip: Trip | null;
+  /** Latest activities, oldest first (office life replays them). */
+  activity_log: Activity[];
   web_access: boolean;
   current_task: CurrentTask | null;
   queue_length: number;

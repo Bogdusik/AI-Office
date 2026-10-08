@@ -6,6 +6,7 @@ import { PALETTE } from "@/scene/palette";
 import { type BuildingLayout, type EntranceLayout, coreLayout, elevatorOpening } from "./building";
 import { DIM } from "./dims";
 import type { Barrier, SiteLayout } from "./site";
+import type { LifeAct } from "./trips";
 import { type Part, type Vec3, cube, part, rectCenter, rectSize } from "./types";
 
 /** A sliding leaf: parts around its closed centre, and the direction it slides to open. */
@@ -118,19 +119,72 @@ export function figure(outfit: string): Figure {
   };
 }
 
-/** Walking cycle and sitting for a figure: angles about x (positive swings forward, towards −z). */
-export function figurePose(walked: number, speed: number, sit: number, tapping: boolean) {
-  const phase = (walked / DIM.motion.stride) * Math.PI * 2;
-  const amp = Math.min(1, speed / 1.2) * (1 - sit);
+export type FigureInput = { walked: number; speed: number; sit: number; tapping?: boolean; act?: LifeAct; carry?: boolean };
+export type FigurePose = { legs: { thigh: number; shin: number }[]; arms: [number, number]; bob: number; lean: number; turn: number };
+
+/**
+ * Walking cycle, sitting and the small movements of office life, as angles about x (positive swings forward,
+ * towards −z; `lean` > 0 tips the upper body back) and a turn of the upper body. `t` and `seed` only vary
+ * idle motion (typing, stretching, gestures) so two people never move in step.
+ */
+export function figurePose(p: FigureInput, t = 0, seed = 0): FigurePose {
+  const { sit, act } = p;
+  const phase = (p.walked / DIM.motion.stride) * Math.PI * 2;
+  const amp = Math.min(1, p.speed / 1.2) * (1 - sit);
   const swing = Math.sin(phase) * 0.55 * amp;
   const knee = (s: number) => -Math.max(0, -Math.sin(phase + s)) * 0.7 * amp;
-  const reach = 1.05 * sit;
+  const wave = (rate: number, k = 0) => Math.sin(t * rate + seed * 1.7 + k);
+  let arms: [number, number] = [-swing * 0.8 + 1.05 * sit, swing * 0.8 + 1.05 * sit];
+  let lean = 0;
+  let turn = 0;
+  if (p.speed < 0.2) {
+    if (act === "type") arms = [1.05 + 0.07 * wave(13), 1.05 + 0.07 * wave(13, 2)];
+    else if (act === "lean") {
+      const stretching = ((t + seed * 3.1) % 14) < 2.4;
+      arms = stretching ? [2.9, 2.9] : [0.35, 0.35];
+      lean = stretching ? 0.34 : 0.26;
+    } else if (act === "sofa") {
+      arms = [0.4, 0.4];
+      lean = 0.18;
+    } else if (act === "talk") {
+      arms = [0.2, 0.55 + 0.35 * wave(2.3)];
+      turn = 0.12 * wave(0.9);
+    } else if (act === "brew") arms = [0.1, 1.25];
+    else if (act === "window") {
+      arms = [-0.12, -0.12];
+      turn = 0.15 * wave(0.4);
+    } else if (act === "stand") turn = 0.1 * wave(0.5);
+  }
+  if (p.carry) arms = [arms[0], 0.95];
+  if (p.tapping) arms = [arms[0], 1.35];
   return {
     legs: [
       { thigh: swing + (sit * Math.PI) / 2, shin: knee(0) - (sit * Math.PI) / 2 },
       { thigh: -swing + (sit * Math.PI) / 2, shin: knee(Math.PI) - (sit * Math.PI) / 2 },
     ],
-    arms: [-swing * 0.8 + reach, tapping ? 1.35 : swing * 0.8 + reach],
+    arms,
     bob: Math.abs(Math.sin(phase)) * 0.03 * amp,
+    lean,
+    turn,
   };
+}
+
+/** Receptionists stay seated: typing most of the time, now and then leaning back and looking around. */
+export function receptionistPose(t: number, seed: number): FigurePose {
+  const cycle = (t + seed * 7) % 24;
+  const act: LifeAct = cycle < 19 ? "type" : "sofa";
+  const pose = figurePose({ walked: 0, speed: 0, sit: 1, act }, t, seed);
+  return { ...pose, turn: 0.18 * Math.sin(t * 0.35 + seed * 2) };
+}
+
+/** Where a carried mug sits in the right hand (arm-local, the arm hangs along −y). */
+export const MUG_IN_HAND: Vec3 = [0, -0.46, -0.04];
+
+/** Speech bubble above two people talking: parts around its centre. */
+export function speechBubble(): Part[] {
+  return [
+    cube([0, 0, 0], [0.66, 0.4, 0.05], PALETTE.dark, "screen"),
+    part("prism", [-0.16, -0.25, 0], [0.18, 0.05, 0.18], PALETTE.dark, "screen", [Math.PI / 2, 0, 0]),
+    ...[-0.17, 0, 0.17].map((x) => part("sphere", [x, 0, 0.03], [0.09, 0.09, 0.03], "#ffffff", "screen")),
+  ];
 }
