@@ -3,6 +3,7 @@ from datetime import datetime
 from pydantic import BaseModel
 
 from app.models.enums import ActivityKind, AgentStatus, FloorKind, RunStatus, TaskStage, TaskStatus, TripKind
+from app.schemas.agent import ReleaseBlocker
 
 
 class WebStep(BaseModel):
@@ -27,10 +28,14 @@ class CurrentTask(BaseModel):
 
 
 class Trip(BaseModel):
-    """An agent's latest trip; it lasts `Motion.arrive_seconds` or `Motion.depart_seconds` from `started_at`."""
+    """An agent's latest trip; it lasts `Motion.arrive_seconds` or `Motion.depart_seconds` from `started_at`;
+    a return lasts (`started_at` − `origin_at`) + `Motion.return_extra_seconds`."""
 
     kind: TripKind
     started_at: datetime
+    origin_at: datetime | None = None
+    """Start of the departure this trip continues: the one a return turned back from, or the one an arrival
+    came straight back from (the car drove to the map edge and returned)."""
 
 
 class Activity(BaseModel):
@@ -54,6 +59,8 @@ class AgentState(BaseModel):
     current_task: CurrentTask | None
     queue_length: int
     awaiting_review: int
+    release_blocked: ReleaseBlocker | None = None
+    """Why the director cannot send the agent home now; None when they can."""
 
 
 class FloorState(BaseModel):
@@ -83,6 +90,9 @@ class Motion(BaseModel):
 
     arrive_seconds: float
     depart_seconds: float
+    turn_back_seconds: float
+    """A departing car stays in its spot at least this long; a return can only start before it."""
+    return_extra_seconds: float
     server_time: datetime
 
 

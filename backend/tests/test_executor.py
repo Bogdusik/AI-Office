@@ -178,8 +178,9 @@ async def test_full_cycle(
     assert (await world.task(task["id"])).stage == C
 
     assert (await client.post(f"/api/v1/tasks/{task['id']}/approve")).status_code == 200
-    await until(world.is_agent(agent["id"], AgentStatus.OFF_SITE))
-    assert statuses(agent_events, agent["id"]) == ["arriving", "idle", "working", "waiting_review", "leaving", "off_site"]
+    await until(world.is_agent(agent["id"], AgentStatus.IDLE))
+    await asyncio.sleep(0.3)
+    assert statuses(agent_events, agent["id"]) == ["arriving", "idle", "working", "waiting_review", "idle"]
 
 
 async def test_request_changes_produces_second_version(
@@ -469,7 +470,7 @@ async def test_agent_stays_while_something_awaits_review(
     assert await world.agent_status(agent["id"]) == AgentStatus.WAITING_REVIEW
 
     await client.post(f"/api/v1/tasks/{second['id']}/cancel")
-    await until(world.is_agent(agent["id"], AgentStatus.OFF_SITE))
+    await until(world.is_agent(agent["id"], AgentStatus.IDLE))
 
 
 async def test_only_one_executor_runs_per_database(
@@ -498,6 +499,8 @@ async def test_new_task_brings_an_agent_back_after_leaving(
     await start_executor(ScriptedWorker())
     await until(world.is_task(task["id"], TaskStatus.NEEDS_REVIEW))
     await client.post(f"/api/v1/tasks/{task['id']}/approve")
+    await until(world.is_agent(agent["id"], AgentStatus.IDLE))
+    await client.post(f"/api/v1/agents/{agent['id']}/release")
     await until(world.is_agent(agent["id"], AgentStatus.OFF_SITE))
 
     again = await make_task(agent["id"])

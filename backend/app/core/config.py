@@ -17,6 +17,11 @@ class Settings(BaseSettings):
     """Trip from the map edge to the desk; the scene fits the whole animation into it."""
     executor_stage_seconds: float = 5.0
     executor_depart_seconds: float = 75.0
+    executor_turn_back_seconds: float = 52.0
+    """A departing car never leaves its spot before this; a task that comes earlier turns the agent back to the
+    desk, a later one lets the car drive to the map edge and come straight back."""
+    executor_return_extra_seconds: float = 5.0
+    """A return lasts the time already spent leaving plus this."""
     executor_tick_seconds: float = 1.0
     executor_worker: Literal["fake", "llm"] = "fake"
     executor_progress_seconds: float = 1.0
