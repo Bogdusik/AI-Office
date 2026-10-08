@@ -29,6 +29,9 @@ class Settings(BaseSettings):
     llm_stage_timeout_seconds: float = 300.0
     llm_retries: int = 1
     llm_reserve_tokens: int = 6144
+    """Least part of the context window kept for the answer; the real reserve also counts thinking and the answer size."""
+    llm_think_tokens: int = 6144
+    """Room kept for the model's thinking (OLLAMA_THINK=true) on top of the expected answer."""
     llm_research_timeout_seconds: float = 900.0
 
     searxng_url: str = "http://127.0.0.1:8888"

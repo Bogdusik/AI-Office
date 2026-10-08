@@ -515,3 +515,39 @@ async def test_fake_worker_streams_its_text() -> None:
     assert len(report.partials) > 1
     assert all(b.startswith(a) for a, b in zip(report.partials, report.partials[1:], strict=False))
     assert report.partials[-1] == out.text
+
+
+async def test_a_failed_task_is_retried_from_the_stage_that_failed(
+    client: AsyncClient,
+    world: World,
+    start_executor: Callable[..., Awaitable[Executor]],
+    floor: dict[str, Any],
+    make_agent: Factory,
+    make_task: Factory,
+) -> None:
+    agent = await make_agent(floor["id"])
+    task = await make_task(agent["id"])
+    other = await make_task(agent["id"], title="queued meanwhile")
+    worker = ScriptedWorker()
+    worker.failing.add((task["id"], D))
+    worker.hold(other["id"], P)
+    await start_executor(worker)
+    await until(world.is_task(task["id"], TaskStatus.FAILED))
+    assert (await client.post(f"/api/v1/tasks/{other['id']}/retry")).status_code == 409
+
+    worker.failing.clear()
+    res = await client.post(f"/api/v1/tasks/{task['id']}/retry")
+
+    assert res.status_code == 200 and res.json()["status"] in ("queued", "in_progress")
+    assert res.json()["finished_at"] is None
+    worker.release(other["id"], P)
+    await until(world.is_task(task["id"], TaskStatus.NEEDS_REVIEW))
+    runs = await world.runs(task["id"])
+    assert [(r.stage, r.status) for r in runs] == [
+        (P, RunStatus.SUCCEEDED),
+        (D, RunStatus.FAILED),
+        (D, RunStatus.SUCCEEDED),
+        (C, RunStatus.SUCCEEDED),
+    ]
+    assert len(await world.artifacts(task["id"])) == 1
+

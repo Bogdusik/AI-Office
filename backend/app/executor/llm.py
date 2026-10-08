@@ -4,6 +4,9 @@
   The slot is held for one model call only, so tool calls (web) never block other agents.
 - A call's timeout starts when the request is sent, not when the agent joins the queue.
 - One retry after a timeout, a dropped connection or a 5xx; a missing model is not retried.
+- The context window keeps room for thinking and the answer (`prompt.reserve_tokens`). If the window still fills
+  up before any text (thinking took it all), the call is made once more without thinking; an answer that cannot
+  fit even then fails with the numbers, never as an unexplained empty answer.
 - Cancelling the asyncio task closes the HTTP stream, and Ollama stops generating.
 - The research stage of an agent with web access runs a tool loop (see `research.py`).
 """
@@ -17,7 +20,7 @@ from typing import Any
 
 import httpx
 
-from app.executor.prompt import build_messages
+from app.executor.prompt import build_messages, reserve_tokens
 from app.executor.worker import AgentSnapshot, StageError, StageInput, StageOutput, StageReport
 from app.models.enums import RunProvider, TaskStage
 
@@ -33,6 +36,7 @@ class LlmSettings:
     stage_timeout: float
     retries: int
     reserve_tokens: int
+    think_tokens: int = 6144
 
 
 class OllamaUnavailable(StageError):
@@ -49,6 +53,14 @@ class StageTimeout(StageError):
 
 class _Retryable(Exception):
     pass
+
+
+class _ContextFull(Exception):
+    """The context window filled up before the model wrote any text."""
+
+    def __init__(self, prompt_tokens: int, output_tokens: int, thought: bool) -> None:
+        super().__init__("context window full")
+        self.prompt_tokens, self.output_tokens, self.thought = prompt_tokens, output_tokens, thought
 
 
 @dataclass
@@ -80,6 +92,10 @@ class LlmWorker:
     def model_for(self, agent: AgentSnapshot) -> str:
         return (agent.model or "").strip() or self.settings.model
 
+    def reserve_for(self, data: StageInput) -> int:
+        s = self.settings
+        return reserve_tokens(data, num_ctx=s.num_ctx, minimum=s.reserve_tokens, think_tokens=s.think_tokens if s.think else 0)
+
     async def run(self, data: StageInput, report: StageReport) -> StageOutput:
         if data.stage == TaskStage.RESEARCH and data.agent.web_access and self.web is not None:
             from app.executor.research import run_research
@@ -87,7 +103,7 @@ class LlmWorker:
             return await run_research(self, self.web, data, report)
         s = self.settings
         model = self.model_for(data.agent)
-        messages = build_messages(data, num_ctx=s.num_ctx, reserve_tokens=s.reserve_tokens, today=date.today())
+        messages = build_messages(data, num_ctx=s.num_ctx, reserve_tokens=self.reserve_for(data), today=date.today())
         turn = await self.generate(model, messages, report)
         if not turn.content:
             raise StageError("Модель вернула пустой ответ")
@@ -115,10 +131,22 @@ class LlmWorker:
         async with self._gpu:
             await report.started()
             attempts = 1 + max(0, s.retries)
+            think = s.think
             for attempt in range(1, attempts + 1):
                 try:
                     async with asyncio.timeout(limit):
-                        return await self._chat(model, messages, report, tools)
+                        try:
+                            return await self._chat(model, messages, report, tools, think)
+                        except _ContextFull as full:
+                            if not think:
+                                raise self._context_error(full) from None
+                            # thinking used up the window: the same request without thinking leaves it all to the answer
+                            think = False
+                            report.partial("")
+                            try:
+                                return await self._chat(model, messages, report, tools, think)
+                            except _ContextFull as again:
+                                raise self._context_error(again) from None
                 except TimeoutError:
                     failure: StageError = StageTimeout(
                         f"Модель «{model}» не ответила за {limit:g} с (попыток: {attempt})."
@@ -134,21 +162,36 @@ class LlmWorker:
                 report.partial("")
         raise AssertionError("unreachable")
 
+    def _context_error(self, full: _ContextFull) -> StageError:
+        s = self.settings
+        where = "на размышления, текст ответа не начат" if full.thought else "до текста ответа"
+        return StageError(
+            f"Ответ не поместился в окно контекста модели ({s.num_ctx} токенов): вход {full.prompt_tokens} токенов, "
+            f"ещё {full.output_tokens} ушло {where}. Сократите описание или комментарии задачи "
+            "или увеличьте OLLAMA_NUM_CTX в backend/.env."
+        )
+
     async def _chat(
-        self, model: str, messages: list[dict[str, Any]], report: StageReport, tools: list[dict[str, Any]] | None
+        self,
+        model: str,
+        messages: list[dict[str, Any]],
+        report: StageReport,
+        tools: list[dict[str, Any]] | None,
+        think: bool | None = None,
     ) -> Turn:
         s = self.settings
         body: dict[str, Any] = {
             "model": model,
             "messages": messages,
             "stream": True,
-            "think": s.think,
+            "think": s.think if think is None else think,
             "options": {"num_ctx": s.num_ctx, "temperature": s.temperature},
         }
         if tools:
             body["tools"] = tools
         turn = Turn()
         content: list[str] = []
+        thought = False
         async with httpx.AsyncClient(base_url=s.url, timeout=httpx.Timeout(None, connect=5), transport=self._transport) as client:
             try:
                 async with client.stream("POST", "/api/chat", json=body) as response:
@@ -167,6 +210,7 @@ class LlmWorker:
                         if "error" in chunk:
                             raise _Retryable(f"Ollama: {chunk['error']}")
                         message = chunk.get("message") or {}
+                        thought = thought or bool(message.get("thinking"))
                         if message.get("content"):
                             content.append(message["content"])
                             report.partial("".join(content))
@@ -179,7 +223,13 @@ class LlmWorker:
                             seconds = (chunk.get("eval_duration") or 0) / 1e9
                             turn.tokens_per_second = round(turn.output_tokens / seconds, 1) if seconds > 0 else None
                             if not turn.content and not turn.tool_calls:
-                                raise _Retryable("Модель вернула пустой ответ")
+                                used = turn.input_tokens + turn.output_tokens
+                                if chunk.get("done_reason") == "length" or used >= s.num_ctx - 8:
+                                    raise _ContextFull(turn.input_tokens, turn.output_tokens, thought)
+                                raise _Retryable(
+                                    f"Модель закончила ответ, не написав текста (вход {turn.input_tokens} токенов, "
+                                    f"вывод {turn.output_tokens}{', только размышления' if thought else ''})"
+                                )
                             return turn
             except (httpx.ReadError, httpx.RemoteProtocolError, httpx.WriteError) as err:
                 raise _Retryable(f"Соединение с Ollama оборвалось: {err}") from err

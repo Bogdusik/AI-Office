@@ -23,7 +23,8 @@ ALLOWED_TRANSITIONS: dict[TaskStatus, frozenset[TaskStatus]] = {
     ),
     TaskStatus.CHANGES_REQUESTED: frozenset({TaskStatus.IN_PROGRESS, TaskStatus.CANCELLED}),
     TaskStatus.DONE: frozenset(),
-    TaskStatus.FAILED: frozenset(),
+    # Retry puts a failed task back into the queue; it continues from the stage that failed.
+    TaskStatus.FAILED: frozenset({TaskStatus.QUEUED}),
     TaskStatus.CANCELLED: frozenset(),
 }
 
