@@ -6,6 +6,8 @@ from dataclasses import asdict, dataclass, field
 from datetime import date
 from typing import Any
 
+from app.jobs.freshness import EXPIRED, OPEN, RANK, UNCHECKED
+
 
 class SourceError(Exception):
     """A job source failed. The message is short, safe to show and never contains a URL or a key."""
@@ -38,6 +40,12 @@ class Job:
     """Every source that lists this vacancy → its id there."""
     texts: list[str] = field(default_factory=list)
     """Every text seen for this vacancy (each listing's description, the full advert): the filter reads them all."""
+    expires: date | None = None
+    """Closing date from the source (Reed's `expirationDate`)."""
+    freshness: str = UNCHECKED
+    """`open`, `expired` or `unchecked`: is it still open, as far as a source's API or its advert page tells."""
+    freshness_note: str = ""
+    """How that was found out, or why it could not be."""
 
     def __post_init__(self) -> None:
         self.links = self.links or {self.source: self.url}
@@ -48,6 +56,21 @@ class Job:
     def checked_text(self) -> str:
         """What the eligibility filter reads: the title and every text of every listing."""
         return "\n".join([self.title, *dict.fromkeys(t for t in (*self.texts, self.description) if t)])
+
+    def mark(self, state: str, note: str) -> None:
+        """Records what a source or the advert page says; stronger evidence wins (see `freshness.RANK`)."""
+        if RANK[state] > RANK[self.freshness] or (state == self.freshness and note):
+            self.freshness, self.freshness_note = state, note
+
+    def dated(self, expires: date | None, source: str) -> None:
+        """A closing date from a source's API: past → expired, otherwise open until then."""
+        self.expires = expires or self.expires
+        if self.expires is None:
+            return
+        if self.expires < date.today():
+            self.mark(EXPIRED, f"closed on {self.expires.isoformat()} ({source} API)")
+        else:
+            self.mark(OPEN, f"open until {self.expires.isoformat()} ({source} API)")
 
     @property
     def salary(self) -> str:
@@ -61,6 +84,7 @@ class Job:
         data = asdict(self)
         data.pop("texts")
         data["posted"] = self.posted.isoformat() if self.posted else None
+        data["expires"] = self.expires.isoformat() if self.expires else None
         data["salary"] = self.salary
         return data
 

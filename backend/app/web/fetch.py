@@ -21,6 +21,11 @@ TITLE_RE = re.compile(r"<title[^>]*>(.*?)</title>", re.IGNORECASE | re.DOTALL)
 class FetchError(Exception):
     """The page could not be read; the message is short and safe to show."""
 
+    def __init__(self, message: str, status: int | None = None) -> None:
+        super().__init__(message)
+        self.status = status
+        """The HTTP status when the site answered with an error."""
+
 
 @dataclass(frozen=True)
 class FetchLimits:
@@ -101,7 +106,7 @@ class PageFetcher:
                         current = urljoin(target.url, location)
                         continue
                     if response.status_code >= 400:
-                        raise FetchError(f"HTTP {response.status_code}")
+                        raise FetchError(f"HTTP {response.status_code}", status=response.status_code)
                     return await self._read(target.url, response)
                 finally:
                     await response.aclose()

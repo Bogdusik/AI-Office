@@ -1,4 +1,4 @@
-import type { AgentState, AgentStatus, TaskStage, TaskStatus } from "@/lib/api";
+import type { AgentState, AgentStatus, JobsReport, TaskStage, TaskStatus } from "@/lib/api";
 
 type Tag = { label: string; color: string };
 
@@ -53,6 +53,36 @@ const EXCLUSION: [RegExp, string][] = [
 /** Russian name of a hard-filter reason sent by the backend (`app/jobs/eligibility.py`). */
 export function exclusionReason(reason: string): string {
   return EXCLUSION.find(([re]) => re.test(reason))?.[1] ?? reason;
+}
+
+const FRESHNESS_NOTE: [RegExp, (m: RegExpMatchArray) => string][] = [
+  [/^open until (\S+) \((\w+) API\)/, (m) => `открыта до ${m[1]} (${m[2]})`],
+  [/^closed on (\S+) \((\w+) API\)/, (m) => `срок подачи истёк ${m[1]} (${m[2]})`],
+  [/^(\w+) no longer lists it/, (m) => `${m[1]} её больше не показывает`],
+  [/^the advert page is gone \(HTTP (\d+)\)/, (m) => `страница вакансии удалена (HTTP ${m[1]})`],
+  [/^the advert page says "(.+)"/, (m) => `на странице: «${m[1]}»`],
+  [/^the advert page is up/, () => "страница вакансии открывается"],
+  [/^the site does not let automated requests in \(HTTP (\d+)\)/, (m) => `сайт не пускает автоматические запросы (HTTP ${m[1]})`],
+  [/^Adzuna's API gives no closing date/, () => "Adzuna не сообщает срок подачи"],
+  [/^Reed gave no closing date/, () => "Reed не сообщил срок подачи"],
+  [/^the page was not opened/, () => "страница не открывалась"],
+];
+
+/** "найдено 20, исключено 2, закрыто 1" for a research stage that used the job tools. */
+export function jobCounts(report: JobsReport): string {
+  const closed = report.expired?.length ?? 0;
+  const found = report.jobs.length + report.excluded.length + closed;
+  return `найдено ${found}, исключено ${report.excluded.length}${closed ? `, закрыто ${closed}` : ""}`;
+}
+
+/** Russian text of a freshness note from the backend (`app/jobs/freshness.py`, the sources). */
+export function freshnessNote(note: string | undefined): string {
+  if (!note) return "";
+  for (const [re, label] of FRESHNESS_NOTE) {
+    const m = note.match(re);
+    if (m) return label(m);
+  }
+  return note;
 }
 
 export const TASK_STATUS: Record<TaskStatus, Tag> = {

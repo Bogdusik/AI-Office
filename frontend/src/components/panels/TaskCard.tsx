@@ -3,7 +3,7 @@
 import { type FormEvent, useState } from "react";
 import { type TaskDetail, type TaskStatus, api } from "@/lib/api";
 import { humanize } from "@/lib/errors";
-import { RUN_STATUS, TASK_STAGE, TASK_STATUS } from "@/lib/labels";
+import { RUN_STATUS, TASK_STAGE, TASK_STATUS, jobCounts } from "@/lib/labels";
 import { useAction } from "@/lib/useAction";
 import { useFetched } from "@/lib/useFetched";
 import type { LocatedAgent } from "@/lib/world";
@@ -177,7 +177,7 @@ export function TaskCard({ taskId, located }: { taskId: number; located: Located
               count={research.activity.length}
               action={
                 <span className="font-mono text-[11px] text-ink/40">
-                  {research.jobs ? `найдено ${research.jobs.jobs.length + research.jobs.excluded.length}, исключено ${research.jobs.excluded.length} · ` : ""}v{research.attempt}
+                  {research.jobs ? `${jobCounts(research.jobs)} · ` : ""}v{research.attempt}
                 </span>
               }
             >

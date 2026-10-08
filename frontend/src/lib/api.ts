@@ -146,12 +146,16 @@ export type WebStep = {
   detail?: string;
   source?: number;
   url?: string;
-  /** Job search: vacancies found (before the filter) and excluded by it. */
+  /** Job search: vacancies found (before the filter), excluded by it and closed according to the source. */
   found?: number;
   excluded?: number;
+  expired?: number;
 };
 
 export type JobExclusion = { reason: string; phrase: string };
+
+/** Is a vacancy still open: from a source's API or its advert page; `unchecked` when neither could tell. */
+export type Freshness = "open" | "expired" | "unchecked";
 
 export type JobRow = {
   ref: string;
@@ -164,17 +168,26 @@ export type JobRow = {
   posted: string | null;
   full: boolean;
   exclusions: JobExclusion[];
+  /** Absent in results saved before freshness was tracked. */
+  freshness?: Freshness;
+  freshness_note?: string;
+  expires?: string | null;
 };
 
-/** What the job tools found for one version: usable vacancies, excluded ones with reasons, failures. */
+export type TaskPage = { url: string; freshness: Freshness; note: string };
+
+/** What the job tools found for one version: usable vacancies, excluded and closed ones with reasons, failures. */
 export type JobsReport = {
   calls: number;
   jobs: JobRow[];
   excluded: JobRow[];
+  expired?: JobRow[];
   summary: string;
   failures: Record<string, string>;
   /** The vacancy in the task itself failed the filter (review mode): no application is prepared. */
   task_flags: (JobExclusion & { where: string })[];
+  /** Links in the task (the vacancy under review) and whether each is still open. */
+  task_pages?: TaskPage[];
 };
 
 export type Run = {

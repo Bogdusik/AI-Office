@@ -6,6 +6,7 @@ import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
 
+from app.jobs.freshness import EXPIRED, RANK
 from app.jobs.models import Job, SourceError, SourceNotConfigured
 from app.jobs.sources import JobSource, record
 
@@ -60,6 +61,9 @@ def absorb(first: Job, other: Job) -> None:
     if first.salary_min is None and first.salary_max is None:
         first.salary_min, first.salary_max, first.salary_note = other.salary_min, other.salary_max, other.salary_note
     first.posted = max(filter(None, (first.posted, other.posted)), default=None)
+    first.expires = max(filter(None, (first.expires, other.expires)), default=None)
+    if RANK[other.freshness] > RANK[first.freshness]:
+        first.freshness, first.freshness_note = other.freshness, other.freshness_note
 
 
 def merge(groups: Sequence[Sequence[Job]]) -> list[Job]:
@@ -141,6 +145,12 @@ class JobSearch:
                 record(source.name, str(err))
                 error = str(err)
                 continue
+            finally:
+                if listing is not job:
+                    job.mark(listing.freshness, listing.freshness_note)
+                    job.expires = listing.expires or job.expires
+            if job.freshness == EXPIRED:
+                return None, None
             if text:
                 if listing is not job:
                     job.salary_note = job.salary_note or listing.salary_note
