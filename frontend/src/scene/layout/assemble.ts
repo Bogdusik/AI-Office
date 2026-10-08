@@ -119,6 +119,7 @@ function kitchenWithPartition(b: BuildingLayout, f: FloorLayout, parts: Part[], 
   const k = kitchenLayout(b.kitchenZone);
   parts.push(...place(M.kitchen(k.counterLength), at(k.counter.position[0], y, k.counter.position[2], k.counter.yaw)));
   parts.push(...place(M.fridge(), at(k.fridge.position[0], y, k.fridge.position[2], k.fridge.yaw)));
+  parts.push(...place(M.coffeeMachine(), at(k.coffee.position[0], y + k.coffee.position[1], k.coffee.position[2], k.coffee.yaw)));
   parts.push(...place(M.diningTable(), at(k.table.position[0], y, k.table.position[2])));
   for (const c of k.chairs) parts.push(...place(M.simpleChair(), at(c.position[0], y, c.position[2], c.yaw)));
   parts.push(...place(M.pottedPlant(), at(k.plant[0], y, k.plant[2])));
