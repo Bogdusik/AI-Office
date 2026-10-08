@@ -35,7 +35,10 @@ in English unless a task asks otherwise.
   reads full adverts on demand. A hard filter in code (not the model) drops vacancies that ask for security clearance
   with a UK residency condition (SC/DV/NPPV), years of UK residency or a nationality from birth; the result lists the
   excluded ones with the reason and the count. Sent a vacancy that fails it, the agent says so instead of writing an
-  application.
+  application. Vacancies that are closed (a past closing date in Reed's API, removed from Reed, an advert page that is
+  gone or says it has expired) are never recommended; where neither the API nor the page can tell (Adzuna gives no
+  closing date and its pages refuse automated requests, which are not worked around), the result says that freshness
+  was not checked.
 - **A living building.** Cars queue at the barriers, people wait at the card reader and share the lift (capacity 4),
   walk to the kitchen while the model is busy, sit in the lounge while waiting for review, chat when they are free,
   and leave the same way they came. Click any agent, desk, parking spot or the server room to open its panel.
