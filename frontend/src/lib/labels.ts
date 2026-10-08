@@ -1,4 +1,4 @@
-import type { AgentState, AgentStatus, JobsReport, TaskStage, TaskStatus } from "@/lib/api";
+import type { AgentState, AgentStatus, JobsReport, ReleaseBlocker, TaskStage, TaskStatus } from "@/lib/api";
 
 type Tag = { label: string; color: string };
 
@@ -8,7 +8,18 @@ export const AGENT_STATUS: Record<AgentStatus, Tag> = {
   idle: { label: "Свободен", color: "#2fbf83" },
   working: { label: "Работает", color: "#f0a020" },
   waiting_review: { label: "Ждёт проверки", color: "#8b6cf0" },
-  leaving: { label: "Уезжает", color: "#4f8fe8" },
+  leaving: { label: "Уезжает домой", color: "#4f8fe8" },
+  returning: { label: "Возвращается", color: "#4f8fe8" },
+};
+
+/** Statuses of an agent who is in the building (at the desk, resting, or walking back to the desk). */
+export const IN_OFFICE: ReadonlySet<AgentStatus> = new Set(["idle", "working", "waiting_review", "returning"]);
+
+/** Hint on a disabled «Отпустить домой» button (`/state` → `release_blocked`). */
+export const RELEASE_BLOCKED: Record<ReleaseBlocker, string> = {
+  tasks: "Есть задачи в работе, в очереди или на доработке",
+  on_the_way: "Сотрудник ещё идёт к столу",
+  away: "Сотрудника нет в офисе",
 };
 
 export const WAITING_FOR_MODEL: Tag = { label: "Ждёт модель", color: "#6f9bc6" };
@@ -34,7 +45,7 @@ export function activityCaption(agent: Pick<AgentState, "status" | "current_task
   const task = agent.current_task;
   if (now === "waiting_model") return "Ждёт модель";
   if (now === "waiting_review" || agent.status === "waiting_review") return "Ждёт проверки";
-  if (now === "idle" || agent.status === "idle") return "На перерыве";
+  if (now === "idle" || agent.status === "idle") return "Отдыхает";
   if (agent.status !== "working") return null;
   if (task?.web_step?.kind === "fetch") return `Читает ${task.web_step.target}`;
   if (task?.web_step?.kind === "search") return "Ищет в сети";
