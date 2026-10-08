@@ -20,9 +20,10 @@ from typing import Any
 
 import httpx
 
+from app.executor.job_tools import finalize
 from app.executor.prompt import build_messages, reserve_tokens
 from app.executor.worker import AgentSnapshot, StageError, StageInput, StageOutput, StageReport
-from app.models.enums import RunProvider, TaskStage
+from app.models.enums import AgentTool, RunProvider, TaskStage
 
 
 @dataclass(frozen=True)
@@ -82,12 +83,15 @@ class LlmWorker:
         settings: LlmSettings,
         transport: httpx.AsyncBaseTransport | None = None,
         web: "Any | None" = None,
+        jobs: "Any | None" = None,
     ) -> None:
         self.settings = settings
         self._transport = transport
         self._gpu = asyncio.Semaphore(settings.concurrency)
         self.web = web
         """`research.WebTools`, or None when web search is off."""
+        self.jobs = jobs
+        """`job_tools.JobTools` for agents with the `jobs` tool, or None."""
 
     def model_for(self, agent: AgentSnapshot) -> str:
         return (agent.model or "").strip() or self.settings.model
@@ -97,10 +101,12 @@ class LlmWorker:
         return reserve_tokens(data, num_ctx=s.num_ctx, minimum=s.reserve_tokens, think_tokens=s.think_tokens if s.think else 0)
 
     async def run(self, data: StageInput, report: StageReport) -> StageOutput:
-        if data.stage == TaskStage.RESEARCH and data.agent.web_access and self.web is not None:
+        web = self.web if data.agent.web_access else None
+        jobs = self.jobs if AgentTool.JOBS in data.agent.tools else None
+        if data.stage == TaskStage.RESEARCH and (web is not None or jobs is not None):
             from app.executor.research import run_research
 
-            return await run_research(self, self.web, data, report)
+            return await run_research(self, web, data, report, jobs)
         s = self.settings
         model = self.model_for(data.agent)
         messages = build_messages(data, num_ctx=s.num_ctx, reserve_tokens=self.reserve_for(data), today=date.today())
@@ -108,6 +114,8 @@ class LlmWorker:
         if not turn.content:
             raise StageError("Модель вернула пустой ответ")
         text = strip_service_lines(turn.content) if data.stage in DELIVERABLE_STAGES else turn.content
+        if data.stage == TaskStage.SELF_CHECK:
+            text = finalize(text, data.jobs)
         return StageOutput(
             text=_keep_web_notes(data, text),
             input_tokens=turn.input_tokens,

@@ -60,6 +60,16 @@ class TokenTotals(BaseModel):
     total_out: int
 
 
+class JobSourceInfo(BaseModel):
+    name: str
+    label: str
+    configured: bool
+    """API keys are set in backend/.env (their values are never sent)."""
+    last_ok_at: datetime | None = None
+    last_error: str | None = None
+    last_error_at: datetime | None = None
+
+
 class ServerRoom(BaseModel):
     worker: str
     default_model: str
@@ -67,6 +77,7 @@ class ServerRoom(BaseModel):
     gpu: GpuInfo | None
     searxng_up: bool
     searxng_url: str
+    job_sources: list[JobSourceInfo] = []
     last_speed: LastSpeed | None
     queue: list[ModelUser]
     """Waiting for the model, oldest first."""

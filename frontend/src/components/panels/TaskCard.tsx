@@ -3,7 +3,7 @@
 import { type FormEvent, useState } from "react";
 import { type TaskDetail, type TaskStatus, api } from "@/lib/api";
 import { humanize } from "@/lib/errors";
-import { RUN_STATUS, TASK_STAGE, TASK_STATUS } from "@/lib/labels";
+import { RUN_STATUS, TASK_STAGE, TASK_STATUS, jobCounts } from "@/lib/labels";
 import { useAction } from "@/lib/useAction";
 import { useFetched } from "@/lib/useFetched";
 import type { LocatedAgent } from "@/lib/world";
@@ -178,7 +178,15 @@ export function TaskCard({ taskId, located }: { taskId: number; located: Located
           </Section>
 
           {research && (
-            <Section title="Поиск в сети" count={research.activity.length} action={<span className="font-mono text-[11px] text-ink/40">v{research.attempt}</span>}>
+            <Section
+              title={research.activity.some((s) => s.kind === "jobs" || s.kind === "job") ? "Поиск вакансий и в сети" : "Поиск в сети"}
+              count={research.activity.length}
+              action={
+                <span className="font-mono text-[11px] text-ink/40">
+                  {research.jobs ? `${jobCounts(research.jobs)} · ` : ""}v{research.attempt}
+                </span>
+              }
+            >
               <WebSteps steps={research.activity.map((step) => (step.status === "running" ? { ...step, status: "failed", detail: "прервано" } : step))} />
             </Section>
           )}

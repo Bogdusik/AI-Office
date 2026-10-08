@@ -1,4 +1,4 @@
-"""Research stage with web tools: the model searches (SearXNG) and reads pages, then writes notes.
+"""Research stage with tools: web (SearXNG search, page reads) and/or job tools (`job_tools.py`), then notes.
 
 Loop: model call with `tools` → run the requested tools → feed results back (as data, inside tags) → repeat,
 until the model answers with notes or a limit is hit (then one last call without tools). Every opened page
@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import TYPE_CHECKING, Any
 
+from app.executor.job_tools import JOB_TOOLS, JobSession, JobTools, get_job, notes_appendix, search_jobs
 from app.executor.prompt import (
     WebLimits,
     budget_chars,
@@ -76,6 +77,7 @@ class WebTools:
 @dataclass
 class _Session:
     steps: list[ActivityStep] = field(default_factory=list)
+    jobs: JobSession | None = None
     sources: list[tuple[str, str]] = field(default_factory=list)
     calls: int = 0
     searches_ok: int = 0
@@ -157,45 +159,86 @@ async def _fetch_page(tools: WebTools, report: StageReport, session: _Session, u
         session.pages_failed += 1
         reason = str(err) or "timeout"
         await _finish_step(report, session, step, "failed", reason)
-        return f"ERROR: could not open {url}: {reason}. Try another result."
+        closed = session.jobs.page_failed(url, err) if session.jobs else ""
+        return f"ERROR: could not open {url}: {reason}.{closed or ' Try another result.'}"
     session.sources.append((page.url, page.title))
     number = len(session.sources)
     await _finish_step(report, session, step, "done", page.title, source=number, url=page.url)
-    return web_page_block(number, page.url, page.title, page.text)
+    flagged = session.jobs.page_checked((url, page.url), page.title, page.text) if session.jobs else ""
+    return web_page_block(number, page.url, page.title, page.text) + flagged
 
 
-def _notes(session: _Session, text: str) -> str:
-    parts = [text.strip()]
-    if session.searches_failed and not session.searches_ok:
+class _Steps:
+    """`job_tools.StepLog` over the stage's shared list of steps (web and job steps in one timeline)."""
+
+    def __init__(self, report: StageReport, session: _Session) -> None:
+        self._report, self._session = report, session
+
+    async def start(self, step: ActivityStep) -> ActivityStep:
+        return await _step(self._report, self._session, {"id": len(self._session.steps) + 1, **step})
+
+    async def finish(self, step: ActivityStep, status: str, detail: str, **extra: Any) -> None:
+        await _finish_step(self._report, self._session, step, status, detail, **extra)
+
+
+def _notes(session: _Session, text: str, web: bool) -> str:
+    top, bottom = notes_appendix(session.jobs.report()) if session.jobs else ("", "")
+    parts = [top, text.strip(), bottom]
+    used_jobs = bool(session.jobs and session.jobs.searches)
+    if web and session.searches_failed and not session.searches_ok:
         parts.append(SEARCH_DOWN_NOTE)
-    elif not session.sources:
+    elif web and not session.sources and not used_jobs:
         parts.append(NO_PAGES_NOTE)
     if session.sources:
         parts.append("## Sources\n" + "\n".join(f"[{i}] {title} — {url}" for i, (url, title) in enumerate(session.sources, 1)))
-    return "\n\n".join(parts)
+    return "\n\n".join(p for p in parts if p)
 
 
-async def run_research(worker: "LlmWorker", tools: WebTools, data: StageInput, report: StageReport) -> StageOutput:
+async def run_research(
+    worker: "LlmWorker", tools: WebTools | None, data: StageInput, report: StageReport, jobs: JobTools | None = None
+) -> StageOutput:
+    """`tools`: web tools (None without web access); `jobs`: job tools (None unless the agent has them)."""
     s = worker.settings
     model = worker.model_for(data.agent)
-    limits = WebLimits(calls=tools.max_calls, pages=tools.max_pages)
-    messages: list[dict[str, Any]] = list(
-        build_messages(data, num_ctx=s.num_ctx, reserve_tokens=worker.reserve_for(data), today=date.today(), web=limits)
-    )
-    budget = budget_chars(s.num_ctx, worker.reserve_for(data))
+    limits = WebLimits(calls=tools.max_calls, pages=tools.max_pages) if tools else None
+    reserve = worker.reserve_for(data)
     session = _Session()
+    if jobs is not None:
+        session.jobs = JobSession.start(data.task.title, data.task.description, max(0, jobs.max_calls - data.job_calls_used))
+    messages: list[dict[str, Any]] = list(
+        build_messages(
+            data,
+            num_ctx=s.num_ctx,
+            reserve_tokens=reserve,
+            today=date.today(),
+            web=limits,
+            job_calls=session.jobs.calls_left if session.jobs else None,
+        )
+    )
+    available = (TOOLS if tools else []) + (JOB_TOOLS if jobs else [])
+    budget = budget_chars(s.num_ctx, reserve)
+    steps = _Steps(report, session)
+    stage_timeout = tools.stage_timeout if tools else (jobs.stage_timeout if jobs else 900.0)
+    max_turns = (tools.max_calls if tools else 0) + (jobs.max_calls if jobs else 0) + 2
     spent = 0.0
+    turns = 0
 
     def remaining() -> float:
-        return tools.stage_timeout - spent
+        return stage_timeout - spent
+
+    def tools_left() -> bool:
+        web_left = tools is not None and session.calls < tools.max_calls
+        jobs_left = session.jobs is not None and session.jobs.calls_left > 0
+        return web_left or jobs_left
 
     while True:
-        final = session.calls >= tools.max_calls or remaining() <= 0
+        turns += 1
+        final = not tools_left() or remaining() <= 0 or turns > max_turns
         if final:
             messages.append({"role": "user", "content": LIMIT_REACHED})
         shrink_tool_messages(messages, budget)
         clocked = _ClockedReport(report)
-        turn = await worker.generate(model, messages, clocked, None if final else TOOLS, max(remaining(), 60.0))
+        turn = await worker.generate(model, messages, clocked, None if final else available, max(remaining(), 60.0))
         spent += time.monotonic() - (clocked.sent_at or time.monotonic())
         session.input_tokens += turn.input_tokens
         session.output_tokens += turn.output_tokens
@@ -204,17 +247,34 @@ async def run_research(worker: "LlmWorker", tools: WebTools, data: StageInput, r
             if not turn.content:
                 raise StageError("Модель вернула пустые заметки исследования")
             return StageOutput(
-                text=_notes(session, turn.content),
+                text=_notes(session, turn.content, web=tools is not None),
                 input_tokens=session.input_tokens,
                 output_tokens=session.output_tokens,
                 sources=tuple(url for url, _ in session.sources),
                 tokens_per_second=session.tokens_per_second,
+                jobs=session.jobs.report() if session.jobs else None,
             )
         messages.append({"role": "assistant", "content": turn.content, "tool_calls": turn.tool_calls})
         for call in turn.tool_calls:
             name, args = _arguments(call)
             started = time.monotonic()
-            if session.calls >= tools.max_calls:
+            job_tool = name in ("search_jobs", "get_job")
+            if job_tool and jobs is not None and session.jobs is not None:
+                if session.jobs.calls_left <= 0:
+                    result = f"ERROR: the job tool limit for this task is used up ({jobs.max_calls} calls). Write the notes from what you have."
+                elif name == "search_jobs" and str(args.get("query") or "").strip():
+                    session.jobs.calls_left -= 1
+                    session.jobs.calls += 1
+                    result = await search_jobs(jobs, steps, session.jobs, args)
+                elif name == "get_job" and str(args.get("job") or "").strip():
+                    session.jobs.calls_left -= 1
+                    session.jobs.calls += 1
+                    result = await get_job(jobs, steps, session.jobs, args)
+                else:
+                    result = f"ERROR: missing argument for {name}."
+            elif tools is None or job_tool or name not in ("web_search", "fetch_page"):
+                result = f"ERROR: unknown tool or missing argument ({name})."
+            elif session.calls >= tools.max_calls:
                 result = LIMIT_REACHED
             elif name == "web_search" and str(args.get("query") or "").strip():
                 session.calls += 1

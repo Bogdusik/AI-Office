@@ -329,7 +329,7 @@ async def run_demo(session: AsyncSession, at: datetime | None = None) -> SeedRep
         if spec.versions:
             task.started_at = t
         for version, demo in enumerate(spec.versions, start=1):
-            for stage in rules.task_stages(web_access=agent.web_access, version=version):
+            for stage in rules.task_stages(web_access=agent.web_access, version=version, tools=agent.tools):
                 session.add(
                     Run(
                         task_id=task.id,
