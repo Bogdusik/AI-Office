@@ -6,6 +6,10 @@ Ideas parked for later stages. Don't implement before their stage.
 
 - `search_jobs` tool for the `job_search` agent: query a jobs API (Adzuna, Reed, or my own SearchWork project) and get structured vacancies (title, company, location, salary, link) instead of reading job-board pages, which often block bots (403) or render in JS.
 
+## Agents working together (after stage 7)
+
+- Real collaboration: an agent can hand part of a task to a colleague or ask them to review the result (a sub-task in the DB, with its own runs); in the scene the agent walks over to the colleague's desk.
+
 ## Stage 7 — Life animation (later parts)
 
 - Arriving and leaving cars don't yet give way to each other in the parking aisle (leaving cars queue among themselves, arriving cars are spaced at the entry barrier); a car reversing out while another drives in can briefly overlap.
