@@ -1,7 +1,7 @@
 """The work on one stage of a task, hidden behind `StageWorker`.
 
 The executor builds a `StageInput` from plain snapshots (no ORM objects, no session) and stores whatever
-`StageOutput` comes back. Stage 6 adds a real implementation next to `FakeWorker`; nothing else changes.
+`StageOutput` comes back. `LlmWorker` (a local model) and `FakeWorker` (no model, for the demo and tests) are interchangeable.
 """
 
 import asyncio
@@ -124,8 +124,12 @@ def _input_text(data: StageInput) -> str:
     )
 
 
+FAKE_STEPS = 40
+"""The fake worker shows its text in this many steps, as a model streams it."""
+
+
 class FakeWorker:
-    """Waits `delay` seconds and returns a placeholder in Russian; marks its runs as provider `fake`."""
+    """Types a placeholder in Russian over `delay` seconds, word by word; marks its runs as provider `fake`."""
 
     provider = RunProvider.FAKE
 
@@ -137,8 +141,12 @@ class FakeWorker:
 
     async def run(self, data: StageInput, report: StageReport) -> StageOutput:
         await report.started()
-        await asyncio.sleep(self.delay)
         text = self._text(data)
+        words = text.split(" ")
+        steps = min(FAKE_STEPS, len(words))
+        for step in range(1, steps + 1):
+            await asyncio.sleep(self.delay / steps)
+            report.partial(" ".join(words[: len(words) * step // steps]))
         return StageOutput(text=text, input_tokens=estimate_tokens(_input_text(data)), output_tokens=estimate_tokens(text))
 
     @staticmethod
@@ -150,14 +158,15 @@ class FakeWorker:
             case TaskStage.PLAN:
                 return f"План (заглушка) по задаче «{title}»:\n1. Разобрать условие.\n2. Собрать материалы.\n3. Написать черновик и проверить его."
             case TaskStage.RESEARCH:
-                return "Исследование (заглушка): настоящего поиска в сети пока нет, источники не собирались."
+                return "Исследование (заглушка): фальшивый исполнитель не ищет в сети, источники не собирались."
             case TaskStage.DRAFT:
                 base = f"Черновик версии {data.version} (заглушка) по задаче «{title}»."
                 return f"{base}\nУчтены комментарии директора:\n{notes}" if director else base
             case TaskStage.SELF_CHECK:
                 parts = [
                     f"# {title}",
-                    f"Результат, версия {data.version} — заглушка фальшивого исполнителя. Настоящий текст появится на этапе 6.",
+                    f"Результат, версия {data.version} — заглушка фальшивого исполнителя (EXECUTOR_WORKER=fake). "
+                    "Настоящий текст пишет локальная модель: EXECUTOR_WORKER=llm.",
                 ]
                 if data.task.description:
                     parts.append(f"## Задача\n{data.task.description}")

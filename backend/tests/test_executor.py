@@ -14,6 +14,7 @@ from app.executor.worker import StageReport
 from app.models import Agent, Artifact, Run, Task
 from app.models.enums import AgentStatus, RunProvider, RunStatus, TaskStage, TaskStatus
 from tests.conftest import Factory
+from tests.llm_fixtures import RecordingReport, stage_input
 
 FAST = Timings(arrive=0, depart=0, tick=0.05)
 P, R, D, C = TaskStage.PLAN, TaskStage.RESEARCH, TaskStage.DRAFT, TaskStage.SELF_CHECK
@@ -503,3 +504,14 @@ async def test_new_task_brings_an_agent_back_after_leaving(
     await until(world.is_task(again["id"], TaskStatus.NEEDS_REVIEW))
     await until(world.is_agent(agent["id"], AgentStatus.WAITING_REVIEW))
     assert statuses(agent_events, agent["id"])[-4:] == ["arriving", "idle", "working", "waiting_review"]
+
+
+async def test_fake_worker_streams_its_text() -> None:
+    report = RecordingReport()
+
+    out = await FakeWorker(0).run(stage_input(), report)
+
+    assert report.events == ["started"]
+    assert len(report.partials) > 1
+    assert all(b.startswith(a) for a, b in zip(report.partials, report.partials[1:], strict=False))
+    assert report.partials[-1] == out.text
