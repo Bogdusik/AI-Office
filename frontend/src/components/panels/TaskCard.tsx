@@ -21,6 +21,7 @@ function actionsFor(status: TaskStatus) {
     requestChanges: status === "needs_review",
     pause: status === "in_progress",
     resume: status === "paused",
+    retry: status === "failed",
     cancel: !TERMINAL.includes(status),
   };
 }
@@ -62,6 +63,11 @@ function Actions({ task }: { task: TaskDetail }) {
         {can.resume && (
           <Button busy={busy === "resume"} onClick={() => run("resume", () => api.resume(task.id))}>
             Продолжить
+          </Button>
+        )}
+        {can.retry && (
+          <Button variant="primary" busy={busy === "retry"} onClick={() => run("retry", () => api.retry(task.id))} title="Вернуть в очередь: работа продолжится с этапа, на котором случилась ошибка">
+            Повторить
           </Button>
         )}
         {can.cancel && <ConfirmButton label="Отменить" question="Отменить задачу?" busy={busy === "cancel"} onConfirm={() => run("cancel", () => api.cancel(task.id))} />}

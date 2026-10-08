@@ -107,7 +107,7 @@ async def test_ollama_down_gives_a_clear_message() -> None:
 
 async def test_empty_answer_is_an_error() -> None:
     ollama = FakeOllama([[{"message": {"content": ""}, "done": True, "eval_count": 3}]])
-    with pytest.raises(StageError, match="пустой ответ"):
+    with pytest.raises(StageError, match=r"закончила ответ, не написав текста \(вход 0 токенов, вывод 3\)"):
         await LlmWorker(llm_settings(retries=0), ollama.transport()).run(stage_input(), RecordingReport())
 
 

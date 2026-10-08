@@ -180,9 +180,9 @@ async def run_research(worker: "LlmWorker", tools: WebTools, data: StageInput, r
     model = worker.model_for(data.agent)
     limits = WebLimits(calls=tools.max_calls, pages=tools.max_pages)
     messages: list[dict[str, Any]] = list(
-        build_messages(data, num_ctx=s.num_ctx, reserve_tokens=s.reserve_tokens, today=date.today(), web=limits)
+        build_messages(data, num_ctx=s.num_ctx, reserve_tokens=worker.reserve_for(data), today=date.today(), web=limits)
     )
-    budget = budget_chars(s.num_ctx, s.reserve_tokens)
+    budget = budget_chars(s.num_ctx, worker.reserve_for(data))
     session = _Session()
     spent = 0.0
 
