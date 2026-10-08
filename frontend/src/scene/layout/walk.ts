@@ -212,6 +212,13 @@ function officeFloor(g: Builder, b: BuildingLayout, f: FloorLayout) {
     // Coffee queue down the kitchen corridor: place 0 in front of the machine, the others one step apart.
     const queue = k.queue.map((p, n) => g.add(WALK.coffee(i, n), p3(p[0], y, p[2]), i));
     g.chain([entry, ...[...queue].reverse(), g.add(WALK.kitchen(i), p3(k.counter.position[0], y, k.counter.position[2] + 1.1), i)]);
+    // Back from the machine past the queue (not through it), beside the kitchen table, to the side corridor.
+    const exitX = k.queue[0][0] + DIM.life.queueExit;
+    const out1 = g.add(`f${i}:coffee:exit`, p3(exitX, y, k.queue[0][2]), i);
+    const out2 = g.add(`f${i}:coffee:exit2`, p3(exitX, y, k.table.position[2] - 1.4), i);
+    const out3 = g.add(`f${i}:coffee:exit3`, p3(exitX - 0.3, y, sz), i);
+    along.push(out3);
+    g.chain([queue[0], out1, out2, out3]);
   }
   g.line(along, 0);
 }
@@ -305,6 +312,11 @@ export function walkGraph(b: BuildingLayout, site: SiteLayout): WalkGraph {
 
 /** Shortest walk between two nodes (Dijkstra; stairs cost their slower pace). Points include both ends. */
 export function findPath(g: WalkGraph, from: string, to: string): Vec3[] | null {
+  return findPathIds(g, from, to)?.map((id) => g.nodes.get(id)!.p) ?? null;
+}
+
+/** Same as `findPath`, as node ids. */
+export function findPathIds(g: WalkGraph, from: string, to: string): string[] | null {
   if (!g.nodes.has(from) || !g.nodes.has(to)) return null;
   const dist = new Map<string, number>([[from, 0]]);
   const prev = new Map<string, string>();
@@ -330,7 +342,7 @@ export function findPath(g: WalkGraph, from: string, to: string): Vec3[] | null 
   if (!dist.has(to)) return null;
   const ids = [to];
   while (ids[0] !== from) ids.unshift(prev.get(ids[0])!);
-  return ids.map((id) => g.nodes.get(id)!.p);
+  return ids;
 }
 
 /* ---------- obstacles (for checks) ---------- */
