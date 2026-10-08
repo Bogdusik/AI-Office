@@ -60,6 +60,10 @@ export const DIM = {
     hurry: 1.5,
     stand: 1.1,
     queueStep: 1,
+    /** A free agent resting on the sofa or by a window goes for a stroll on about every `strollEvery`-th leg… */
+    strollEvery: 3,
+    /** …and stands at the stroll's end this long before going back. */
+    strollPause: 3,
   },
   /** Walking graph: a person's clearance radius and the stair opening from a floor to its landing. */
   walk: { radius: 0.28, stairDoor: 1.05, readerStand: 0.55, carSide: 1.35, outside: 0.8, inside: 0.7 },

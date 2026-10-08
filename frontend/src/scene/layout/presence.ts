@@ -11,11 +11,12 @@ const BY_STATUS: Record<AgentStatus, Presence> = {
   working: { atDesk: true, carParked: true },
   waiting_review: { atDesk: true, carParked: true },
   leaving: { atDesk: false, carParked: true },
+  returning: { atDesk: false, carParked: true },
 };
 
 /**
- * `?preview=1` puts everyone in place without touching the data. `onTrip`: the agent is arriving or leaving
- * and the trip is animated, so the moving car and person are drawn instead of the static ones.
+ * `?preview=1` puts everyone in place without touching the data. `onTrip`: the agent is arriving, leaving or
+ * returning and the trip is animated, so the moving car and person are drawn instead of the static ones.
  */
 export function presence(status: AgentStatus, preview: boolean, onTrip = false, inLife = false): Presence {
   if (preview) return { atDesk: true, carParked: true };
