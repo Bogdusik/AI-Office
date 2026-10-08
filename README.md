@@ -172,6 +172,24 @@ can use a different model: «Изменить» in its panel → «Модель�
 also starts SearXNG on `127.0.0.1:8888`. Agents with «Доступ в интернет» then search and read pages during the
 research stage.
 
+## Start and stop with one command (Windows)
+
+After the first-time setup above, two scripts in the repository root run everything:
+
+```powershell
+.\start.ps1          # Docker Desktop, PostgreSQL + SearXNG, Ollama + model, backend, frontend; -Open opens the browser
+.\stop.ps1           # frontend, backend, containers (data kept), unloads the model; -All also quits Ollama and Docker Desktop
+```
+
+`start.ps1` starts only what is not running yet and checks each service before the next one: the database is healthy,
+SearXNG answers a search, the model from `backend/.env` is downloaded and loaded into GPU memory (skipped with
+`EXECUTOR_WORKER=fake`), `/health` answers and the page opens. If something does not come up, it stops and says what to
+do (for example `ollama pull <model>` or which program holds the port). The backend and the frontend run hidden in the
+background with their output in `logs/`. `stop.ps1` stops only this project's processes: a different program on port
+3000 or 8000 is reported and left alone.
+
+If PowerShell refuses to run scripts, run them as `powershell -ExecutionPolicy Bypass -File .\start.ps1`.
+
 ## Using it
 
 - Mouse: left drag rotates, right drag pans, the wheel zooms to the cursor; «Домой» returns to the default view.
