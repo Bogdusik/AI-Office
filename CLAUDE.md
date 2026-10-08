@@ -12,7 +12,7 @@ State lives in the database; the 3D scene only renders it. No business logic in 
 4. Clicks and panels — done
 5. Tasks with a fake executor — done
 6. Real AI via Ollama + web search — done (6a local model, 6b web tools and server room)
-7. Life animation — 7a (arrivals and departures) ← **current**, 7b (life in the office) next
+7. Life animation — 7a (arrivals and departures) done, 7b (office life) ← **current**
 8. Polish
 
 Do only the current stage. Don't jump ahead.
@@ -50,10 +50,10 @@ Floors: the reception and the director-office floor can't be deleted (409).
 - `frontend/src/store/useWorldStore.ts` — polls `/api/v1/state` (15 s fallback, SSE refreshes it); only replaces `world` when the payload changed (`motion.server_time` ignored); keeps `clockOffset` = server clock − browser clock
 - `frontend/src/store/useTasksStore.ts` — all tasks (`GET /tasks`), reloaded when `world` changes or after an action, not every poll
 - `frontend/src/store/actions.ts` — `mutate()`: every write refreshes world + tasks right away (also on error) and bumps `revision` so open details refetch
-- `frontend/src/store/useUiStore.ts` — UI-only state: selected floor, `?preview=1`, camera home/focus requests, selection, hover, open task, director panel, collapsed HUD blocks, `animation` (HUD switch, remembered in localStorage), `follow` (agent the camera follows); `back()` = Esc
+- `frontend/src/store/useUiStore.ts` — UI-only state: selected floor, `?preview=1`, camera home/focus requests, selection, hover, open task, director panel, collapsed HUD blocks, `animation` and `life` (HUD switches, remembered in localStorage), `follow` (agent the camera follows); `back()` = Esc
 - `frontend/src/scene/layout/` — **all** scene geometry as pure functions (import as `@/scene/layout`):
   `types` (Part, place), `dims` (DIM, CAMERA, FADE), `models` (primitive furniture/cars/trees as parts), `building` (floors, zones, walls, core, stairs, entrance, roof),
-  `site` (roads, intersection, parking, fence, car route graph), `greenery`, `camera` (home view, wall/roof fading), `picks` (selection keys + click volumes), `walk` (walking graph, path search, obstacle footprints), `trips` (trip planner + samplers), `moving` (lift cabin, sliding doors, barrier arms, animated figure), `assemble` (`buildScene` → parts, walls, labels, roof, routes, picks, moving props)
+  `site` (roads, intersection, parking, fence, car route graph), `greenery`, `camera` (home view, wall/roof fading), `picks` (selection keys + click volumes), `walk` (walking graph, path search, obstacle footprints), `trips` (trip planner + samplers), `life` (office life planner), `moving` (lift cabin, sliding doors, barrier arms, animated figure), `assemble` (`buildScene` → parts, walls, labels, roof, routes, picks, moving props)
 - `frontend/scripts/check-layout.mts` — `npm run check:layout`: parking/route/pick/walking-graph invariants of the pure layout, trip planner (exact duration, no overlaps, lift capacity, stability) + stage ribbon (no test runner)
 - `frontend/src/scene/palette.ts` — colours; one accent (`#ff7a59`) for director-related things
 - `frontend/src/components/scene/` — R3F scene from primitives (render only, reads stores); `motion/` moves trips in one `useFrame`
@@ -120,11 +120,18 @@ Floors: the reception and the director-office floor can't be deleted (409).
 - HUD «Анимация» off → stage 6 behaviour (appear/disappear). Agent panel «Следить»: the camera target follows the person or their car (at the desk: the desk); «Домой» or another selection stops it.
 - Dev only: `window.__aiOffice.frames()` (frame work + intervals), `.view(target, zoom)`; `window.__aiOfficeMotion` (latest poses).
 
+## Office life (stage 7b)
+- No model calls and no generated talk: behaviour is a pure function of `/state` and the clock. `agents.activity_log` (JSONB, the latest 12 entries, oldest first) records every status change plus `working` ↔ `waiting_model` when a stage queues for / gets the model (`Agent.set_activity`, executor `_set_activity`). `/state.current_task` adds `run_state` (waiting|running) and `web_step` {search: query | fetch: site}.
+- `scene/layout/life.ts` (`planLife`): episodes from the log; per episode — working: at the desk typing; waiting_model: at the desk leaning back, coffee after `DIM.life.shortWait` (30 s) or `busyWait` (10 s) when someone else waits too, at most 3 coffee trips at a time, queue of 4 places, brew, back with a cup (the cup stays on the desk until leaving); waiting_review: a lounge sofa seat on the kitchen floor, else a window place on the own floor; idle: strolls on the own floor. Strolls and talks run on a global 30 s grid: on even legs at most one pair per floor (idle or review agents) meets at a conversation place for two legs. A new log entry interrupts: the agent heads for the new activity (back to work at ×1.5). Between floors only the stairs; the lift stays with arrivals and departures. Generators are synchronised in time order only at coffee decisions; a later log entry never changes what came before it.
+- Departures start where office life left the agent (`TripInput.from`: seat, sofa or mid-walk) and still last exactly their duration. Arrivals end seated at the desk, where office life picks them up.
+- Rendering (`Motion.tsx`): one `useFrame` for trips + office life + receptionists (seated, typing, looking around); poses from `figurePose` (type, lean/stretch, sofa, window, talk, brew, carry). Captions above heads from real activity (`activityCaption`: «Пишет план/черновик», «Изучает материалы», «Проверяет результат», «Ищет в сети», «Читает <сайт>», «Ждёт модель», «Ждёт проверки», «На перерыве»); at the desk the plaque shows it instead. A speech bubble without text over a talking pair. The schedule horizon is a 2-minute grid (+5 min), extended as time goes on.
+- HUD «Жизнь офиса» off → everyone at their desk (stage 7a); «Анимация» off still turns all movement off.
+
 ## Rules
 - Secrets only in `.env` files (git-ignored); keep `.env.example` in sync.
 - Schema changes only via Alembic migrations.
 - No auth, no extra libraries without a reason.
 - No sizes or coordinates in components: everything comes from `scene/layout/` (models included); components only render.
-- Moving things are pure functions of (trips, server time): never keep animation state in React or the DB.
+- Moving things are pure functions of (trips, activity log, server time): never keep animation state in React or the DB.
 - Python edits on Windows: always pass `encoding="utf-8"` (the default cp1252 corrupts non-ASCII).
 - Merge feature branches into `main` with a regular merge (no squash).
