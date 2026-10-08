@@ -275,7 +275,8 @@ export function Motion({ world, scene, enabled, life }: { world: WorldState; sce
       }
       if (rig.mug) rig.mug.visible = !!p.carry;
       if (rig.caption) {
-        rig.caption.visible = visible && p.act !== "talk";
+        // At the desk the plaque already says it; the caption follows the agent when away from it.
+        rig.caption.visible = visible && p.act !== "talk" && !(p.sit > 0.5 && (p.act === "type" || p.act === "lean"));
         rig.caption.position.set(p.pos[0], p.pos[1] + (p.sit > 0.5 ? 1.75 : 2.05), p.pos[2]);
       }
       if (rig.bubble) {
