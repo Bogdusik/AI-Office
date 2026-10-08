@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api.health import router as health_router
+from app.api.llms import router as llms_router
 from app.api.v1.router import api_router
 from app.core.config import get_settings
 from app.db.session import SessionLocal, engine
@@ -93,6 +94,8 @@ def build_executor() -> Executor:
             depart=settings.executor_depart_seconds,
             tick=settings.executor_tick_seconds,
             progress=settings.executor_progress_seconds,
+            turn_back=settings.executor_turn_back_seconds,
+            return_extra=settings.executor_return_extra_seconds,
         ),
     )
 
@@ -131,4 +134,5 @@ async def domain_error_handler(_: Request, exc: DomainError) -> JSONResponse:
 
 
 app.include_router(health_router)
+app.include_router(llms_router)
 app.include_router(api_router)
