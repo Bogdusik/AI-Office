@@ -81,7 +81,7 @@ async def build_state(session: AsyncSession, now: datetime | None = None, settin
                 status_since=agent.status_since,
                 activity_log=[Activity.model_validate(entry) for entry in agent.activity_log or []],
                 trip=(
-                    Trip(kind=agent.trip_kind, started_at=agent.trip_started_at)
+                    Trip(kind=agent.trip_kind, started_at=agent.trip_started_at, origin_at=agent.trip_origin_at)
                     if agent.trip_kind is not None and agent.trip_started_at is not None
                     else None
                 ),
@@ -103,6 +103,8 @@ async def build_state(session: AsyncSession, now: datetime | None = None, settin
                 ),
                 queue_length=sum(t.status == TaskStatus.QUEUED for t in own),
                 awaiting_review=sum(t.status == TaskStatus.NEEDS_REVIEW for t in own),
+                release_blocked=rules.release_blocker(agent.status, (t.status for t in own)),
+                leave_at=agent.leave_at,
             )
         )
 
@@ -140,6 +142,8 @@ async def build_state(session: AsyncSession, now: datetime | None = None, settin
         motion=Motion(
             arrive_seconds=settings.executor_arrive_seconds,
             depart_seconds=settings.executor_depart_seconds,
+            turn_back_seconds=settings.executor_turn_back_seconds,
+            return_extra_seconds=settings.executor_return_extra_seconds,
             server_time=now,
         ),
     )

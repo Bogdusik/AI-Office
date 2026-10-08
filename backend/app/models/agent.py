@@ -26,7 +26,7 @@ if TYPE_CHECKING:
     from app.models.task import Task
 
 
-TRIP_OF = {AgentStatus.ARRIVING: TripKind.ARRIVE, AgentStatus.LEAVING: TripKind.DEPART}
+TRIP_OF = {AgentStatus.ARRIVING: TripKind.ARRIVE, AgentStatus.LEAVING: TripKind.DEPART, AgentStatus.RETURNING: TripKind.RETURN}
 
 ACTIVITY_LOG_SIZE = 12
 """Latest activities kept per agent: enough for the scene to replay where the agent has been lately."""
@@ -75,19 +75,29 @@ class Agent(Base):
     status_since: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     trip_kind: Mapped[TripKind | None] = mapped_column(str_enum(TripKind, "trip_kind"))
     trip_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    """The latest trip (arriving or leaving); kept after it ends so the scene can plan around it."""
+    """The latest trip (arriving, leaving or returning); kept after it ends so the scene can plan around it."""
+    trip_origin_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    """Start of the departure the latest trip continues: a return (turned back on the way) or an arrival
+    that came straight back from the map edge. None for an ordinary trip."""
+    leave_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    """«Отпустить всех» lets people go one after another: this agent leaves at this time (the executor does it)."""
     activity_log: Mapped[list[dict[str, str]]] = mapped_column(JSONB, default=list, server_default="[]")
     """Latest activities, oldest first: [{"kind": ActivityKind, "since": ISO time}], at most ACTIVITY_LOG_SIZE."""
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
-    def set_status(self, status: AgentStatus, at: datetime) -> None:
-        """Every status change goes through here: it stamps the start of the status and of a trip."""
+    def set_status(self, status: AgentStatus, at: datetime, origin: datetime | None = None) -> None:
+        """Every status change goes through here: it stamps the start of the status and of a trip.
+        `origin`: the start of the departure this trip continues (see `trip_origin_at`)."""
         self.status = status
         self.status_since = at
+        if status not in (AgentStatus.IDLE, AgentStatus.WAITING_REVIEW):
+            # Leaving, or back at work: a planned «go home» no longer applies.
+            self.leave_at = None
         trip = TRIP_OF.get(status)
         if trip is not None:
             self.trip_kind = trip
             self.trip_started_at = at
+            self.trip_origin_at = origin
         self.set_activity(ActivityKind(status.value), at)
 
     def set_activity(self, kind: ActivityKind, at: datetime) -> None:

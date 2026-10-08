@@ -51,6 +51,14 @@ class Timings:
     """Fallback re-check interval; events usually wake things up sooner."""
     progress: float = 1.0
     """How often text produced so far is saved to the run while a stage runs."""
+    turn_back: float = 50.0
+    """A task that comes this long into a departure or sooner turns the agent back (the car has not moved yet)."""
+    return_extra: float = 12.0
+    """A return lasts the time already spent leaving plus this."""
+
+    def return_seconds(self, origin: datetime, started: datetime) -> float:
+        """Length of a return trip; the scene computes the same (`trips.ts` → `durationOf`)."""
+        return (started - origin).total_seconds() + self.return_extra
 
 
 class _Cancelled:
@@ -221,9 +229,10 @@ class Executor:
         except TimeoutError:
             return self._stop.is_set()
 
-    async def _wait_poke(self, agent_id: int) -> None:
+    async def _wait_poke(self, agent_id: int, limit: float | None = None) -> None:
+        """Until something about the agent changes (an event), a tick, or `limit` seconds, whichever is first."""
         try:
-            await asyncio.wait_for(self._poke(agent_id).wait(), self._t.tick)
+            await asyncio.wait_for(self._poke(agent_id).wait(), min(self._t.tick, limit) if limit is not None else self._t.tick)
         except TimeoutError:
             pass
 
@@ -235,38 +244,61 @@ class Executor:
             loaded = await self._load(agent_id)
             if loaded is None:
                 return
-            status, since, tasks = loaded
+            status, since, origin, leave_at, tasks = loaded
             nxt = rules.pick_next_task(tasks)
 
             if status == AgentStatus.OFF_SITE:
                 if nxt is None:
                     return
-                await self._set_status(agent_id, AgentStatus.ARRIVING)
-            elif status == AgentStatus.ARRIVING:
-                if await self._sleep(self._remaining(self._t.arrive, since)):
+                await self._set_status(agent_id, AgentStatus.ARRIVING, expected=status)
+            elif status in (AgentStatus.ARRIVING, AgentStatus.RETURNING):
+                length = self._t.return_seconds(origin, since) if status == AgentStatus.RETURNING and origin else self._t.arrive
+                if await self._sleep(self._remaining(length, since)):
                     return
-                await self._set_status(agent_id, AgentStatus.IDLE)
+                await self._set_status(agent_id, AgentStatus.IDLE, expected=status)
             elif status == AgentStatus.LEAVING:
-                if await self._sleep(self._remaining(self._t.depart, since)):
-                    return
-                await self._set_status(agent_id, AgentStatus.OFF_SITE)
+                await self._leave(agent_id, since, nxt is not None)
             elif nxt is not None:
                 await self._work(agent_id, nxt.id)
+            elif leave_at is not None and status in (AgentStatus.IDLE, AgentStatus.WAITING_REVIEW):
+                # Let go with «Отпустить всех»: leaves at the planned time (nothing to work on, so allowed).
+                due = (leave_at - now()).total_seconds()
+                if due <= 0:
+                    await self._set_status(agent_id, AgentStatus.LEAVING, expected=status)
+                else:
+                    await self._wait_poke(agent_id, due)
             elif any(t.status == TaskStatus.NEEDS_REVIEW for t in tasks):
-                await self._set_status(agent_id, AgentStatus.WAITING_REVIEW)
-                await self._wait_poke(agent_id)
-            elif any(t.status == TaskStatus.PAUSED for t in tasks):
-                await self._set_status(agent_id, AgentStatus.IDLE)
+                await self._set_status(agent_id, AgentStatus.WAITING_REVIEW, expected=status)
                 await self._wait_poke(agent_id)
             else:
-                await self._set_status(agent_id, AgentStatus.LEAVING)
+                # Nothing to do: the agent stays in the office until the director lets them go home.
+                await self._set_status(agent_id, AgentStatus.IDLE, expected=status)
+                await self._wait_poke(agent_id)
+
+    async def _leave(self, agent_id: int, since: datetime, has_work: bool) -> None:
+        """One step of a departure. Work that comes while the car is still in its spot turns the agent back;
+        after that the car drives to the map edge and, if there is work, comes straight back."""
+        elapsed = (now() - since).total_seconds()
+        if has_work and elapsed < self._t.turn_back:
+            await self._set_status(agent_id, AgentStatus.RETURNING, origin=since, expected=AgentStatus.LEAVING)
+            return
+        remaining = self._t.depart - elapsed
+        if remaining > 0:
+            await self._wait_poke(agent_id, remaining)
+            return
+        if has_work:
+            await self._set_status(agent_id, AgentStatus.ARRIVING, origin=since, expected=AgentStatus.LEAVING)
+        else:
+            await self._set_status(agent_id, AgentStatus.OFF_SITE, expected=AgentStatus.LEAVING)
 
     @staticmethod
     def _remaining(duration: float, since: datetime) -> float:
-        """Arriving and leaving last `duration` from the status start, also across a server restart."""
+        """Trips last `duration` from the status start, also across a server restart."""
         return duration - (now() - since).total_seconds()
 
-    async def _load(self, agent_id: int) -> tuple[AgentStatus, datetime, list[Task]] | None:
+    async def _load(
+        self, agent_id: int
+    ) -> tuple[AgentStatus, datetime, datetime | None, datetime | None, list[Task]] | None:
         async with self._sessions() as s:
             agent = await s.scalar(
                 select(Agent).where(Agent.id == agent_id).execution_options(populate_existing=True)
@@ -278,14 +310,20 @@ class Executor:
                     select(Task).where(Task.agent_id == agent_id, Task.status.in_(rules.ACTIVE_STATUSES))
                 )
             ).all()
-            return agent.status, agent.status_since, list(tasks)
+            return agent.status, agent.status_since, agent.trip_origin_at, agent.leave_at, list(tasks)
 
-    async def _set_status(self, agent_id: int, status: AgentStatus) -> None:
+    async def _set_status(
+        self, agent_id: int, status: AgentStatus, origin: datetime | None = None, expected: AgentStatus | None = None
+    ) -> None:
+        """`expected`: the status the decision was based on; if the director changed it meanwhile (sent the agent
+        home), nothing is changed and the loop decides again."""
         async with self._sessions() as s:
             agent = await s.scalar(select(Agent).where(Agent.id == agent_id).with_for_update())
             if agent is None or agent.archived_at is not None or agent.status == status:
                 return
-            agent.set_status(status, now())
+            if expected is not None and agent.status != expected:
+                return
+            agent.set_status(status, now(), origin)
             await s.commit()
         publish_agent(agent_id, status)
 

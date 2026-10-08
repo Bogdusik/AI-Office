@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import ClassVar
+from typing import ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -61,3 +61,13 @@ class AgentRead(ORMModel):
     desk_index: int | None
     status: AgentStatus
     archived_at: datetime | None
+
+
+ReleaseBlocker = Literal["tasks", "on_the_way", "away"]
+
+
+class ReleaseAllResult(BaseModel):
+    released: list[int]
+    """Agents sent home."""
+    kept: dict[int, ReleaseBlocker]
+    """Agents who stay, and why: tasks in progress / queued / changes requested, on the way in, not in the office."""

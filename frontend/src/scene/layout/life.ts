@@ -5,7 +5,9 @@
  * - working: at the desk, typing. waiting for the model: at the desk leaning back; after `shortWait` s
  *   (or `busyWait` when someone else is already waiting too) a coffee trip — queue, brew, back with a cup.
  * - waiting for review: a seat on the lounge sofa (kitchen floor), else a place by the window on the own floor.
- * - idle: strolls on the own floor; idle and review agents on the same floor may meet for a talk.
+ * - idle (free, nothing to do: agents stay in the office until the director sends them home): rest on the
+ *   sofa or by a window like a reviewer, now and then a stroll on that floor; without a free place, strolls.
+ *   Idle and review agents on the same floor may meet for a talk.
  * - Any new activity interrupts: the agent heads to where the new activity wants them, in a hurry when
  *   going back to work. Between floors only the stairs (the lift belongs to arrivals and departures).
  *
@@ -19,7 +21,7 @@ import { type Interval, type LifeAct, type SeatRef, type Seg, holdSeg, measured,
 import type { Vec3 } from "./types";
 import { WALK, type WalkGraph, findPathIds } from "./walk";
 
-export type ActivityKind = "off_site" | "arriving" | "working" | "waiting_model" | "waiting_review" | "idle" | "leaving";
+export type ActivityKind = "off_site" | "arriving" | "working" | "waiting_model" | "waiting_review" | "idle" | "leaving" | "returning";
 /** `since` in seconds on the server clock, oldest entry first. */
 export type LifeInput = { agentId: number; floorIndex: number; deskIndex: number; log: { kind: ActivityKind; since: number }[] };
 export type LifeWorld = { building: BuildingLayout; walk: WalkGraph };
@@ -37,6 +39,8 @@ export type LifePlan = {
   to: number;
   cups: Interval[];
   leave: LeaveFrom | null;
+  /** Where each departure in the log started (by its `since`), also for one a return has turned back from. */
+  leaves: { since: number; from: LeaveFrom }[];
 };
 export type LifeSchedule = { plans: LifePlan[]; horizon: number };
 
@@ -98,10 +102,13 @@ function placesOf(w: LifeWorld): Places {
 
 type Rest = { seat: SeatRef } | { window: string } | null;
 
-/** Where each review episode rests: first free sofa seat, else a free window on the own floor, else the desk. */
+/**
+ * Where each leisure episode rests: first free sofa seat, else a free window on the own floor, else the desk
+ * (review) or nowhere (idle: strolls instead).
+ */
 function restPlaces(agents: LifeInput[], places: Places): Map<string, Rest> {
   const reviews = agents
-    .flatMap((a) => episodesOf(a.log).filter((e) => e.kind === "waiting_review").map((e) => ({ a, e })))
+    .flatMap((a) => episodesOf(a.log).filter((e) => leisure(e.kind)).map((e) => ({ a, e })))
     .sort((x, y) => x.e.from - y.e.from || x.a.agentId - y.a.agentId);
   const taken: { key: string; from: number; to: number }[] = [];
   const out = new Map<string, Rest>();
@@ -124,7 +131,7 @@ function conversations(agents: LifeInput[], places: Places, rests: Map<string, R
   for (const a of agents) {
     for (const e of episodesOf(a.log)) {
       if (!leisure(e.kind)) continue;
-      const rest = e.kind === "waiting_review" ? rests.get(`${a.agentId}@${e.from}`) : undefined;
+      const rest = rests.get(`${a.agentId}@${e.from}`);
       const floor = rest && "seat" in rest ? (w.walk.nodes.get(rest.seat.seat)?.floor ?? a.floorIndex) : a.floorIndex;
       const first = Math.ceil((e.from + 2 * SETTLE + 10) / (2 * L)) * 2;
       for (let n = first; n * L < Math.min(e.to, horizon); n += 2) byLeg.set(n, [...(byLeg.get(n) ?? []), { id: a.agentId, floor }]);
@@ -348,12 +355,15 @@ function* waitingModel(c: Ctx, a: LifeInput, e: Episode, s0: State, out: Seg[], 
   return hold({ ...s, carry: false }, Infinity, out, "lean", 0);
 }
 
-/** Strolls (idle) or rest (review) on the global leg grid, with conversations. */
+/** Rest (review, idle) or strolls (idle without a free place) on the global leg grid, with conversations. */
 function atLeisure(c: Ctx, a: LifeInput, e: Episode, s0: State, out: Seg[]): State {
   const L = LIFE.leg;
-  const rest = e.kind === "waiting_review" ? (c.rests.get(`${a.agentId}@${e.from}`) ?? null) : undefined;
-  const strolls = c.places.strolls.get(a.floorIndex) ?? [];
-  const waypoint = (n: number) => strolls[(hash(n, a.floorIndex, 3) + a.deskIndex * 5) % Math.max(1, strolls.length)];
+  const found = c.rests.get(`${a.agentId}@${e.from}`);
+  // undefined: strolls; null: at the desk (a reviewer with no free place).
+  const rest = e.kind === "waiting_review" ? (found ?? null) : (found ?? undefined);
+  const restFloor = rest && "seat" in rest ? (c.w.walk.nodes.get(rest.seat.seat)?.floor ?? a.floorIndex) : a.floorIndex;
+  const strolls = c.places.strolls.get(restFloor) ?? [];
+  const waypoint = (n: number) => strolls[(hash(n, restFloor, 3) + a.deskIndex * 5) % Math.max(1, strolls.length)];
   const home = (s: State, n: number): State => {
     if (rest === null) return sitDown(c, s, deskSeat(a), out);
     if (rest && "seat" in rest) return sitDown(c, s, rest.seat, out);
@@ -381,6 +391,11 @@ function atLeisure(c: Ctx, a: LifeInput, e: Episode, s0: State, out: Seg[]): Sta
     }
     s = hold(s, Math.max(s.t, n * L), out, restAct(), restYaw());
     if (rest === undefined) s = home(s, n + 1);
+    else if (e.kind === "idle" && rest !== null && strolls.length && hash(n, a.agentId, 11) % LIFE.strollEvery === 0) {
+      s = walkTo(c, s, waypoint(n), out);
+      s = hold(s, s.t + LIFE.strollPause, out, "stand", lastYaw(out));
+      s = home(s, n + 1);
+    }
     n += 1;
   }
   return hold(s, Infinity, out, restAct(), restYaw());
@@ -393,6 +408,7 @@ function* lifeOf(c: Ctx, a: LifeInput): Generator<number, LifePlan, void> {
   let from = Infinity;
   let to = Infinity;
   let leave: LeaveFrom | null = null;
+  const leaves: LifePlan["leaves"] = [];
   for (const e of episodesOf(a.log)) {
     if (e.kind === "arriving") {
       state = { t: e.to, at: spotAt(c, WALK.seat(a.floorIndex, a.deskIndex)), seated: deskSeat(a), carry: false };
@@ -401,6 +417,7 @@ function* lifeOf(c: Ctx, a: LifeInput): Generator<number, LifePlan, void> {
     if (!OFFICE.includes(e.kind)) {
       if (e.kind === "leaving" && state) {
         leave = { at: state.at, seated: state.seated, floor: c.w.walk.nodes.get(state.at.prev)?.floor ?? a.floorIndex };
+        leaves.push({ since: e.from, from: leave });
         to = e.from;
       }
       state = null;
@@ -422,7 +439,7 @@ function* lifeOf(c: Ctx, a: LifeInput): Generator<number, LifePlan, void> {
     segs.push(...done.kept);
     state = done.state ?? s0;
   }
-  return { agentId: a.agentId, segs: measured(segs), from: Number.isFinite(from) ? from : Infinity, to, cups, leave };
+  return { agentId: a.agentId, segs: measured(segs), from: Number.isFinite(from) ? from : Infinity, to, cups, leave, leaves };
 }
 
 /** Plans everyone's office life up to `horizon` (s); time order is shared only at coffee decisions. */

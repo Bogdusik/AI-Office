@@ -37,9 +37,11 @@ async def test_state_shows_status_start_trip_and_motion(
     assert _agent(before.json(), agent["id"])["trip"] is None
     motion = before.json()["motion"]
     settings = get_settings()
-    assert (motion["arrive_seconds"], motion["depart_seconds"]) == (
+    assert (motion["arrive_seconds"], motion["depart_seconds"], motion["turn_back_seconds"], motion["return_extra_seconds"]) == (
         settings.executor_arrive_seconds,
         settings.executor_depart_seconds,
+        settings.executor_turn_back_seconds,
+        settings.executor_return_extra_seconds,
     )
     assert abs(_at(motion["server_time"]) - datetime.now(UTC)) < timedelta(seconds=5)
 
@@ -51,6 +53,8 @@ async def test_state_shows_status_start_trip_and_motion(
     assert _at(reviewing["trip"]["started_at"]) <= _at(reviewing["status_since"])
 
     await client.post(f"/api/v1/tasks/{task['id']}/approve")
+    await until(world.is_agent(agent["id"], AgentStatus.IDLE))
+    assert (await client.post(f"/api/v1/agents/{agent['id']}/release")).status_code == 200
     await until(world.is_agent(agent["id"], AgentStatus.OFF_SITE))
     gone = _agent((await client.get("/api/v1/state")).json(), agent["id"])
     assert gone["trip"]["kind"] == TripKind.DEPART

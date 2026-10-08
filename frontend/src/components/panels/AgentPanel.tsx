@@ -2,7 +2,7 @@
 
 import { type FormEvent, useMemo, useState } from "react";
 import { type Agent, type Task, api } from "@/lib/api";
-import { TASK_STAGE, TASK_STATUS, agentTag } from "@/lib/labels";
+import { RELEASE_BLOCKED, TASK_STAGE, TASK_STATUS, agentTag } from "@/lib/labels";
 import { useAction } from "@/lib/useAction";
 import { useFetched } from "@/lib/useFetched";
 import type { LocatedAgent } from "@/lib/world";
@@ -126,6 +126,8 @@ export function AgentPanel({ located }: { located: LocatedAgent }) {
     const done = await run("archive", () => api.archiveAgent(state.id));
     if (done.ok) select(null);
   };
+  const release = () => run("release", () => api.releaseAgent(state.id));
+  const blocked = state.release_blocked;
 
   return (
     <PanelShell
@@ -154,9 +156,20 @@ export function AgentPanel({ located }: { located: LocatedAgent }) {
           <Button onClick={() => setEditing(true)} disabled={!agent}>
             Изменить
           </Button>
+          <span title={blocked ? RELEASE_BLOCKED[blocked] : undefined}>
+            <Button onClick={release} disabled={blocked !== null} busy={busy === "release"} data-testid="release-agent">
+              Отпустить домой
+            </Button>
+          </span>
           <ConfirmButton label="Архивировать" question="Архивировать сотрудника?" onConfirm={archive} busy={busy === "archive"} />
         </div>
       )}
+      {!editing && blocked && blocked !== "away" && (
+        <p className="text-xs text-ink/55" data-testid="release-hint">
+          Отпустить нельзя: {RELEASE_BLOCKED[blocked].toLowerCase()}.
+        </p>
+      )}
+      {!editing && !blocked && state.leave_at && <p className="text-xs text-ink/55">Уйдёт домой через несколько секунд.</p>}
       <ErrorNote text={error} />
 
       <Section title="Текущая задача">

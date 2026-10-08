@@ -148,7 +148,7 @@ async def test_cancel_stops_generation(
     await client.post(f"/api/v1/tasks/{task['id']}/cancel")
     await until(lambda: ollama.closed == 1)
     assert loop.time() - t0 < 1
-    await until(world.is_agent(agent["id"], AgentStatus.OFF_SITE))
+    await until(world.is_agent(agent["id"], AgentStatus.IDLE))
     [run] = await world.runs(task["id"])
     assert run.status == RunStatus.CANCELLED
 

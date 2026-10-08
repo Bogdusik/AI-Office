@@ -1,11 +1,9 @@
 "use client";
 
-import type { AgentStatus } from "@/lib/api";
+import { IN_OFFICE } from "@/lib/labels";
 import { allAgents } from "@/lib/world";
 import { useWorldStore } from "@/store/useWorldStore";
 import { HudBlock } from "./HudBlock";
-
-const IN_OFFICE: ReadonlySet<AgentStatus> = new Set(["idle", "working", "waiting_review"]);
 
 function Metric({ id, label, value, total, color }: { id: string; label: string; value: number | null; total?: number; color: string }) {
   return (
