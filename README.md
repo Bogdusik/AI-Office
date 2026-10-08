@@ -42,8 +42,11 @@ in English unless a task asks otherwise.
   closing date and its pages refuse automated requests, which are not worked around), the result says that freshness
   was not checked.
 - **A living building.** Cars queue at the barriers, people wait at the card reader and share the lift (capacity 4),
-  walk to the kitchen while the model is busy, sit in the lounge while waiting for review, chat when they are free,
-  and leave the same way they came. Click any agent, desk, parking spot or the server room to open its panel.
+  walk to the kitchen while the model is busy, sit in the lounge while waiting for review or when they are free, chat,
+  and stroll. Agents stay in the office when their work is done and take a new task at once; they go home only when you
+  let them («Отпустить домой», «Отпустить всех» lets people go a few seconds apart), and a task that comes while one is
+  still walking to the car turns them back to the desk. Click any agent, desk, parking spot or the server room to open
+  its panel.
 
 ## Architecture
 
@@ -93,9 +96,13 @@ browser tab or a backend restart all show the same picture.
 `(trips, activity log, server time)` → poses; there is no animation state in React or in the database. The trip
 planner handles the queues (entry barrier, parking aisle, exit barrier, card reader, a lift with 4 places) and still
 makes every trip last exactly the 75 s the executor waits for. Plans are append-only, so a new arrival never moves
-anyone already on the way. The browser keeps an offset to the server clock, so all viewers agree on where everyone is.
-`npm run check:layout` checks 41 invariants of this layer (no overlaps, lift capacity, exact durations, stability when
-new trips appear) without a browser.
+anyone already on the way. Turning back on the way home needs one number both sides agree on: a departing car never
+leaves its spot before 50 s, so a task that comes earlier turns the agent back (the return lasts the time already
+spent leaving plus 12 s, enough for the worst case, a lift whose doors have just closed; back early, they sit at the
+desk), and a later one lets the car drive to the map edge and come straight back. The browser keeps an offset to the
+server clock, so all viewers agree on where everyone is. `npm run check:layout` checks 47 invariants of this layer (no
+overlaps, lift capacity, exact durations, no jump when someone turns back at any moment, stability when new trips
+appear) without a browser.
 
 **A queue in front of the GPU.** A semaphore (`LLM_CONCURRENCY`, default 1) guards the model. A run is `waiting` until
 its request is really sent, then `running`. The stage timeout counts from sending, not from joining the queue, and the
@@ -120,7 +127,8 @@ says what could not be checked.
 **Recovery after a restart.** A Postgres advisory lock allows one executor per database. Every step is a short
 transaction that re-reads the row under `SELECT … FOR UPDATE`, so the director's actions (pause, cancel, request
 changes) always win. On start, runs left `running` or `waiting` are marked `interrupted` and their stage runs again;
-agents who were arriving or leaving wait only for the rest of the trip, counted from `status_since`. Because the scene
+agents in the office stay there; those arriving, leaving or returning wait only for the rest of the trip, counted
+from `status_since`. Because the scene
 is computed from those timestamps, an agent halfway up the stairs is still halfway up the stairs after a restart.
 
 ## Requirements
@@ -229,7 +237,11 @@ If PowerShell refuses to run scripts, run them as `powershell -ExecutionPolicy B
 - Click an agent, a free desk, a parking spot, the director's office or the server room to open its panel; Esc closes
   the innermost layer. The HUD switches «Анимация» and «Жизнь офиса» turn movement off and keep everyone at their desks.
 - `?preview=1` shows every agent at their desk and every car parked without touching the database.
-- API docs: http://localhost:8000/docs. Health: http://localhost:8000/health.
+- Agents stay in the office after their work: «Отпустить домой» in an agent's panel, «Отпустить всех» in «Кабинет
+  директора» → «Команда». Someone with a task in progress, queued or sent back for changes cannot go (the disabled
+  button says why); tasks waiting for your review or paused do not keep anyone.
+- API docs: http://localhost:8000/docs, the whole API as Markdown for language models: http://localhost:8000/llms.txt.
+  Health: http://localhost:8000/health.
 
 ## Tests and checks
 
@@ -248,8 +260,11 @@ the layout checks and a production build.
 - Only Ollama is wired up as a provider; the data model already has a field for others.
 - Without a GPU only the fake executor is practical.
 - In the parking aisle, arriving and leaving cars do not give way to each other yet: a car reversing out while another
-  drives in can briefly overlap. When many agents leave at once, the exit barrier is the bottleneck and the first cars
-  drive off faster or slower (×0.4–×2.5) to keep every trip at exactly its duration.
+  drives in can briefly overlap. The exit barrier is the bottleneck: «Отпустить всех» lets people go 5 s apart; agents
+  released by hand within a second or two of each other may have to drive off faster than usual to keep every trip at
+  exactly its duration.
+- An agent who turns back on the way home is often back at the desk a few seconds before work starts: the return
+  lasts the time already spent leaving plus 12 s, set by the slowest case (turning just after the lift doors closed).
 
 ## Roadmap
 
