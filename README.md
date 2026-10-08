@@ -27,8 +27,10 @@ in English unless a task asks otherwise.
 - **Tasks with stages and review.** Queue tasks per agent; the executor runs them in parallel across agents, one task
   per agent at a time. Results are versioned Markdown with sources; rework starts from your comments and the previous
   version. Pause, resume and cancel at any moment.
-- **Local LLM.** Ollama with streaming, thinking on, a context budget that trims inputs in a fixed order, one retry
-  after a timeout or a dropped stream, and plain-language errors for the director (Ollama not running, model not pulled, timed out).
+- **Local LLM.** Ollama with streaming and thinking on. A context budget keeps room for thinking and the whole answer
+  and trims the input in a fixed order (if the window still fills up, the call is repeated without thinking); one retry
+  after a timeout or a dropped stream; plain-language errors for the director (Ollama not running, model not pulled,
+  timed out). A failed task can be retried from the stage that failed.
 - **Web research.** Agents with web access search through a local SearXNG instance and read public pages through a
   guarded fetcher; every claim in the result points to a numbered source.
 - **A living building.** Cars queue at the barriers, people wait at the card reader and share the lift (capacity 4),
