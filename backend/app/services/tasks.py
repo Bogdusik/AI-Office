@@ -120,6 +120,23 @@ async def resume(session: AsyncSession, task_id: int) -> Task:
     return await get_task_detail(session, task.id)
 
 
+async def retry(session: AsyncSession, task_id: int) -> Task:
+    """A failed task goes back to the front of its agent's queue; the executor runs it again from the stage that
+    failed (stages that succeeded for this version are kept)."""
+    task = await get_task(session, task_id, lock=True)
+    if task.status != TaskStatus.FAILED:
+        raise ConflictError(f"Cannot retry a task in status '{task.status}'")
+    queued = await session.scalars(
+        select(Task.position).where(Task.agent_id == task.agent_id, Task.status == TaskStatus.QUEUED)
+    )
+    task.position = rules.front_position(queued.all(), task.position)
+    apply_transition(task, TaskStatus.QUEUED, datetime.now(UTC))
+    task.finished_at = None
+    await session.commit()
+    publish_task(task)
+    return await get_task_detail(session, task.id)
+
+
 async def cancel(session: AsyncSession, task_id: int) -> Task:
     return await _transition(session, task_id, TaskStatus.CANCELLED)
 

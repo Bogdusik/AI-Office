@@ -53,6 +53,11 @@ async def resume_task(task_id: int, db: AsyncSession = Depends(get_db)) -> TaskD
     return TaskDetail.model_validate(await service.resume(db, task_id))
 
 
+@router.post("/{task_id}/retry", response_model=TaskDetail, status_code=status.HTTP_200_OK)
+async def retry_task(task_id: int, db: AsyncSession = Depends(get_db)) -> TaskDetail:
+    return TaskDetail.model_validate(await service.retry(db, task_id))
+
+
 @router.post("/{task_id}/cancel", response_model=TaskDetail, status_code=status.HTTP_200_OK)
 async def cancel_task(task_id: int, db: AsyncSession = Depends(get_db)) -> TaskDetail:
     return TaskDetail.model_validate(await service.cancel(db, task_id))
