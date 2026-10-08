@@ -135,3 +135,16 @@ async def test_profile_get_and_put(client: AsyncClient) -> None:
 
     partial = await client.put("/api/v1/profile", json={"name": "x"})
     assert partial.status_code == 422
+
+
+async def test_seed_skips_a_taken_desk(db: AsyncSession) -> None:
+    await run_seed(db)
+    agent = await db.scalar(select(Agent).where(Agent.role_key == "portfolio_evidence"))
+    assert agent is not None
+    agent.role_key = "renamed_by_director"
+    await db.commit()
+
+    report = await run_seed(db)
+
+    assert "agent portfolio_evidence (desk taken)" in report.skipped
+    assert await _count(db, Agent) == 6
