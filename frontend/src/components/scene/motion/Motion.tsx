@@ -48,9 +48,11 @@ import { PartMeshes } from "./PartMeshes";
 /** Seconds on the server clock (trips and office life are timed by the backend). */
 export const serverNow = () => (Date.now() + useWorldStore.getState().clockOffset) / 1000;
 
-/** Arriving or leaving with a trip that matches: drawn by the animation instead of the static scene. */
+/** Arriving, leaving or returning with a trip that matches: drawn by the animation instead of the static scene. */
 export const onTrip = (a: Pick<AgentState, "status" | "trip">) =>
-  (a.status === "arriving" && a.trip?.kind === "arrive") || (a.status === "leaving" && a.trip?.kind === "depart");
+  (a.status === "arriving" && a.trip?.kind === "arrive") ||
+  (a.status === "leaving" && a.trip?.kind === "depart") ||
+  (a.status === "returning" && a.trip?.kind === "return");
 
 /** In the office (at work, waiting, free) with an activity log: office life draws them. */
 export const inOffice = (a: Pick<AgentState, "status" | "activity_log">) =>
@@ -82,23 +84,21 @@ function lifeInputsOf(world: WorldState, scene: SceneSpec): LifeInput[] {
   );
 }
 
-function tripsOf(world: WorldState, scene: SceneSpec, leaveOf: (agentId: number) => LeaveFrom | null): TripInput[] {
+/**
+ * Trips from `/state`: each agent's latest trip and, when it continues a departure (a return, or an arrival
+ * straight back from the map edge), that departure too — the planner needs it to know where the agent was.
+ */
+function tripsOf(world: WorldState, scene: SceneSpec, leaveOf: (agentId: number, start: number) => LeaveFrom | null): TripInput[] {
   const indexOf = floorIndexOf(scene);
   return world.floors.flatMap((f) =>
     f.agents.flatMap((a) => {
       const floorIndex = indexOf.get(f.number);
       if (!a.trip || floorIndex === undefined) return [];
-      return [
-        {
-          agentId: a.id,
-          kind: a.trip.kind,
-          start: Date.parse(a.trip.started_at) / 1000,
-          floorIndex,
-          deskIndex: a.desk_index,
-          spot: scene.site.deskSpot(floorIndex, a.desk_index),
-          from: a.trip.kind === "depart" ? leaveOf(a.id) : null,
-        },
-      ];
+      const base = { agentId: a.id, floorIndex, deskIndex: a.desk_index, spot: scene.site.deskSpot(floorIndex, a.desk_index) };
+      const start = Date.parse(a.trip.started_at) / 1000;
+      const origin = a.trip.origin_at ? Date.parse(a.trip.origin_at) / 1000 : null;
+      const trip: TripInput = { ...base, kind: a.trip.kind, start, origin, from: a.trip.kind === "depart" ? leaveOf(a.id, start) : null };
+      return origin === null ? [trip] : [{ ...base, kind: "depart" as const, start: origin, from: leaveOf(a.id, origin) }, trip];
     }),
   );
 }
@@ -188,14 +188,19 @@ export function Motion({ world, scene, enabled, life }: { world: WorldState; sce
   const { building, site, moving } = scene;
   const tw = useMemo(() => tripWorld(building, site, carRoutes(site), walkGraph(building, site)), [building, site]);
   const ys = useMemo(() => liftHeights(building), [building]);
-  const durations = useMemo(() => ({ arrive: world.motion.arrive_seconds, depart: world.motion.depart_seconds }), [world.motion.arrive_seconds, world.motion.depart_seconds]);
+  const { arrive_seconds, depart_seconds, turn_back_seconds, return_extra_seconds } = world.motion;
+  const durations = useMemo(
+    () => ({ arrive: arrive_seconds, depart: depart_seconds, turnBack: turn_back_seconds, returnExtra: return_extra_seconds }),
+    [arrive_seconds, depart_seconds, turn_back_seconds, return_extra_seconds],
+  );
   const [horizon, setHorizon] = useState(() => horizonFor(serverNow()));
   const living = enabled && life;
 
   const lifeSchedule = useMemo(() => (living ? planLife(lifeInputsOf(world, scene), { building, walk: tw.walk }, horizon) : null), [living, world, scene, building, tw, horizon]);
   const travellers = useMemo(() => (enabled ? world.floors.flatMap((f) => f.agents.filter(onTrip)) : []), [world, enabled]);
   const schedule = useMemo(() => {
-    const leaveOf = (id: number) => lifeSchedule?.plans.find((p) => p.agentId === id)?.leave ?? null;
+    const leaveOf = (id: number, start: number) =>
+      lifeSchedule?.plans.find((p) => p.agentId === id)?.leaves.find((l) => Math.abs(l.since - start) < 1e-3)?.from ?? null;
     const trips = tripsOf(world, scene, leaveOf);
     if (!enabled || trips.length === 0) return planTrips([], durations, tw);
     return planTrips(relevantTrips(trips, durations, serverNow()), durations, tw);

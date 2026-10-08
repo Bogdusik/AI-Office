@@ -6,7 +6,8 @@ export type AgentStatus =
   | "idle"
   | "working"
   | "waiting_review"
-  | "leaving";
+  | "leaving"
+  | "returning";
 
 export type TaskStatus =
   | "queued"
@@ -35,12 +36,19 @@ export type CurrentTask = {
   web_step: { kind: WebStep["kind"]; target: string } | null;
 };
 
-export type ActivityKind = "off_site" | "arriving" | "working" | "waiting_model" | "waiting_review" | "idle" | "leaving";
+export type ActivityKind = "off_site" | "arriving" | "working" | "waiting_model" | "waiting_review" | "idle" | "leaving" | "returning";
 /** One entry of an agent's activity log (`since` ISO time). */
 export type Activity = { kind: ActivityKind; since: string };
 
-/** An agent's latest trip between the map edge and their desk (kept after it ends). */
-export type Trip = { kind: "arrive" | "depart"; started_at: string };
+/**
+ * An agent's latest trip (kept after it ends): between the map edge and the desk, or back to the desk from a
+ * departure. `origin_at`: start of the departure it continues — the one a return turned back from, or the one an
+ * arrival came straight back from (the car drove to the map edge and returned).
+ */
+export type Trip = { kind: "arrive" | "depart" | "return"; started_at: string; origin_at?: string | null };
+
+/** Why the director cannot send the agent home now. */
+export type ReleaseBlocker = "tasks" | "on_the_way" | "away";
 
 export type AgentState = {
   id: number;
@@ -59,6 +67,10 @@ export type AgentState = {
   current_task: CurrentTask | null;
   queue_length: number;
   awaiting_review: number;
+  /** null: can be sent home now. */
+  release_blocked: ReleaseBlocker | null;
+  /** Let go with «Отпустить всех»: leaves at this time (people go one after another). */
+  leave_at: string | null;
 };
 
 export type FloorKind = "reception" | "office";
@@ -83,8 +95,14 @@ export type WorldStats = {
   model_queue: number;
 };
 
-/** Trip lengths (the scene fits each animation into them) and the server clock at the time of the response. */
-export type Motion = { arrive_seconds: number; depart_seconds: number; server_time: string };
+/**
+ * Trip lengths (the scene fits each animation into them) and the server clock at the time of the response.
+ * A departing car stays in its spot at least `turn_back_seconds`; a return lasts the time already spent leaving
+ * plus `return_extra_seconds`.
+ */
+export type Motion = { arrive_seconds: number; depart_seconds: number; turn_back_seconds: number; return_extra_seconds: number; server_time: string };
+
+export type ReleaseAllResult = { released: number[]; kept: Record<string, ReleaseBlocker> };
 
 export type WorldState = {
   floors: FloorState[];
@@ -288,6 +306,8 @@ export const api = {
   createAgent: (data: AgentCreate) => request<Agent>("POST", "/agents", data),
   updateAgent: (id: number, data: AgentUpdate) => request<Agent>("PATCH", `/agents/${id}`, data),
   archiveAgent: (id: number) => request<void>("DELETE", `/agents/${id}`),
+  releaseAgent: (id: number) => request<Agent>("POST", `/agents/${id}/release`),
+  releaseAll: () => request<ReleaseAllResult>("POST", "/agents/release-all"),
 
   tasks: (signal?: AbortSignal) => request<Task[]>("GET", "/tasks", undefined, signal),
   task: (id: number, signal?: AbortSignal) => request<TaskDetail>("GET", `/tasks/${id}`, undefined, signal),

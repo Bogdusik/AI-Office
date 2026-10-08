@@ -226,7 +226,9 @@ for (const [label, floors, expectedSpots] of [
   const scene = buildScene(standard, () => true);
   const { building, site } = scene;
   const world = tripWorld(building, site, carRoutes(site), walkGraph(building, site));
-  const D = { arrive: 75, depart: 75 };
+  const D = { arrive: 75, depart: 75, turnBack: 50, returnExtra: 12 };
+  /** Six arriving at once; six leaving one after another, as «Отпустить всех» lets them go (EXECUTOR_RELEASE_GAP_SECONDS). */
+  const GAP = { arrive: 0.4, depart: 5 };
   const desks: [number, number][] = [[1, 0], [1, 1], [1, 2], [1, 3], [2, 0], [2, 1]];
   const trips = (kind: "arrive" | "depart", start = 1000, gap = 0.4): TripInput[] =>
     desks.map(([f, d], i) => ({ agentId: i + 1, kind, start: start + i * gap, floorIndex: f, deskIndex: d, spot: site.deskSpot(f, d) }));
@@ -252,22 +254,23 @@ for (const [label, floors, expectedSpots] of [
   };
 
   for (const kind of ["arrive", "depart"] as const) {
-    const schedule = planTrips(trips(kind), D, world);
+    const schedule = planTrips(trips(kind, 1000, GAP[kind]), D, world);
     const { plans, props } = schedule;
     const t0 = 1000;
+    const span = (desks.length - 1) * GAP[kind];
 
-    check(`trips (${kind}): six at once, each lasts exactly its duration`, () => {
+    check(`trips (${kind}): six ${kind === "arrive" ? "at once" : "let go one after another"}, each lasts exactly its duration`, () => {
       for (const p of plans) {
         const end = kind === "arrive" ? last(p.person) : last(p.car);
         assert.ok(Math.abs(end - (p.trip.start + D[kind])) < 1e-6, `trip ${p.trip.agentId} ends at ${end - p.trip.start}`);
-        // Six leaving at once queue for the aisle and the exit barrier; a car that got out early drives off slower.
+        // Leaving cars queue for the aisle and the exit barrier; a car that got out early drives off slower.
         const [lo, hi] = kind === "arrive" ? [0.75, 1.5] : [0.4, 6];
         assert.ok(p.squeeze > lo && p.squeeze < hi, `trip ${p.trip.agentId} final stretch squeeze ${p.squeeze}`);
       }
     });
 
     check(`trips (${kind}): cars never overlap, people keep apart, at most ${4} in the lift`, () => {
-      for (let t = t0; t < t0 + D[kind] + 2; t += 0.1) {
+      for (let t = t0; t < t0 + span + D[kind] + 2; t += 0.1) {
         const cars = plans.map((p) => sample(p.car, t)).filter((c) => c.visible);
         for (let i = 0; i < cars.length; i++) for (let j = i + 1; j < cars.length; j++) assert.ok(!carsOverlap(cars[i], cars[j]), `cars overlap at +${(t - t0).toFixed(1)} s`);
         const people = samplePeople(plans, t, { runs: props.lift, ys }).filter((x) => x.visible);
@@ -287,7 +290,7 @@ for (const [label, floors, expectedSpots] of [
       const laneX = kind === "arrive" ? site.entryLaneX : site.exitLaneX;
       for (const p of plans) {
         let crossed = false;
-        for (let t = t0; t < t0 + D[kind]; t += 0.05) {
+        for (let t = p.trip.start; t < p.trip.start + D[kind]; t += 0.05) {
           const c = sample(p.car, t);
           if (c.visible && Math.abs(c.pos[0] - laneX) < 1.5 && Math.abs(c.pos[2] - site.barrierZ) < 0.3) {
             crossed = true;
@@ -301,14 +304,110 @@ for (const [label, floors, expectedSpots] of [
     });
 
     check(`trips (${kind}): a new trip never changes earlier ones; planning is deterministic`, () => {
-      const all = trips(kind);
-      const later: TripInput = { ...all[0], agentId: 99, start: t0 + 3, floorIndex: 2, deskIndex: 2, spot: site.deskSpot(2, 2) };
+      const all = trips(kind, 1000, GAP[kind]);
+      const later: TripInput = { ...all[0], agentId: 99, start: t0 + span + 3, floorIndex: 2, deskIndex: 2, spot: site.deskSpot(2, 2) };
       const without = planTrips(all, D, world);
       const withLater = planTrips([...all, later], D, world);
-      assert.deepEqual(withLater.plans.slice(0, all.length), without.plans);
+      assert.deepEqual(withLater.plans.filter((p) => p.trip.agentId !== 99), without.plans);
       assert.deepEqual(planTrips(all, D, world), without);
     });
   }
+
+  check("trips (depart): a car never leaves its spot before the turn-back time", () => {
+    for (const p of planTrips([...trips("depart", 1000, GAP.depart), ...trips("depart", 2000, 0.4).slice(0, 2)], D, world).plans) {
+      const spot = site.spots[p.trip.spot].center;
+      for (let t = p.trip.start; t < p.trip.start + D.turnBack; t += 0.25) {
+        const c = sample(p.car, t);
+        assert.ok(Math.hypot(c.pos[0] - spot[0], c.pos[2] - spot[2]) < 1e-6, `car ${p.trip.agentId} moved at +${(t - p.trip.start).toFixed(2)} s`);
+      }
+    }
+  });
+
+  /** A departure from desk (f, d) turned back `e` s in, among others arriving and leaving around it. */
+  const turnedBack = (f: number, d: number, e: number) => {
+    const leave: TripInput = { agentId: 1, kind: "depart", start: 1000, floorIndex: f, deskIndex: d, spot: site.deskSpot(f, d) };
+    const back: TripInput = { ...leave, kind: "return", start: 1000 + e, origin: 1000 };
+    const others: TripInput[] = [
+      { agentId: 2, kind: "depart", start: 1000.4, floorIndex: 1, deskIndex: 3, spot: site.deskSpot(1, 3) },
+      { agentId: 3, kind: "arrive", start: 990, floorIndex: 2, deskIndex: 3, spot: site.deskSpot(2, 3) },
+      { agentId: 4, kind: "depart", start: 1000 + e + 1, floorIndex: 2, deskIndex: 4, spot: site.deskSpot(2, 4) },
+    ];
+    return { leave, back, schedule: planTrips([leave, back, ...others], D, world) };
+  };
+  const turnMoments = Array.from({ length: 142 }, (_, i) => 0.2 + i * 0.35);
+  const backAt = (f: number, d: number) => walkGraph(building, site).nodes.get(WALK.seat(f, d))!.p;
+
+  check("trips (return): turning back at any moment of a departure — no jumps, never late, seated at the desk when it ends", () => {
+    for (const [f, d] of [[1, 0], [1, 4], [2, 1]] as const)
+      for (const e of turnMoments) {
+        const { back, schedule } = turnedBack(f, d, e);
+        const plans = schedule.plans.filter((p) => p.trip.agentId === 1);
+        const [cut, ret] = [plans.find((p) => p.trip.kind === "depart")!, plans.find((p) => p.trip.kind === "return")!];
+        const lift = { runs: schedule.props.lift, ys };
+        const R = e + D.returnExtra;
+        const shown = (t: number) => (t < back.start ? sample(cut.person, t, lift) : sample(ret.person, t, lift));
+        let prev = shown(1000);
+        for (let t = 1000.05; t <= back.start + R + 1; t += 0.05) {
+          const p = shown(t);
+          if (p.visible && prev.visible) assert.ok(Math.hypot(p.pos[0] - prev.pos[0], p.pos[1] - prev.pos[1], p.pos[2] - prev.pos[2]) < 0.5, `desk ${f}/${d}, turned at +${e}: jump at +${(t - 1000).toFixed(2)} s`);
+          prev = p;
+        }
+        const end = sample(ret.person, back.start + R + 1e-6, lift);
+        const seat = backAt(f, d);
+        assert.ok(Math.hypot(end.pos[0] - seat[0], end.pos[1] - seat[1], end.pos[2] - seat[2]) < 0.05 && end.sit > 0.99, `desk ${f}/${d}, turned at +${e}: not seated at the end`);
+        // On time; when the lift is busy they hurry (as office life does going back to work), never run.
+        assert.ok(ret.squeeze >= 0.9 && ret.pace >= 0.6 - 1e-9, `desk ${f}/${d}, turned at +${e.toFixed(2)}: late (squeeze ${ret.squeeze.toFixed(2)}, pace ${ret.pace})`);
+        const spot = site.spots[back.spot].center;
+        for (let t = back.start; t < back.start + R + 5; t += 0.5) {
+          const c = sample(ret.car, t);
+          assert.ok(c.visible && Math.hypot(c.pos[0] - spot[0], c.pos[2] - spot[2]) < 1e-6, "the car stays in its spot");
+          assert.ok(!sample(cut.car, t).visible && !sample(cut.person, t, lift).visible, "the cut departure is gone");
+        }
+        assert.ok(!schedule.props.exit.some((x) => x.owner === `1@1000`), "no barrier opens for the car that stayed");
+        assert.ok(!schedule.props.aisle.some((x) => x.owner === `1@1000`), "the aisle is not held for it");
+      }
+  });
+
+  check("trips (return): cars never overlap and people keep apart while someone turns back", () => {
+    for (const e of [4, 9.4, 16, 31, 46, 49.5]) {
+      const { schedule } = turnedBack(1, 0, e);
+      const { plans, props } = schedule;
+      for (let t = 990; t < 1000 + 75 + 2; t += 0.1) {
+        const cars = plans.map((p) => sample(p.car, t)).filter((c) => c.visible);
+        for (let i = 0; i < cars.length; i++) for (let j = i + 1; j < cars.length; j++) assert.ok(!carsOverlap(cars[i], cars[j]), `turned at +${e}: cars overlap at +${(t - 1000).toFixed(1)} s`);
+        const people = samplePeople(plans, t, { runs: props.lift, ys }).filter((x) => x.visible);
+        for (let i = 0; i < people.length; i++)
+          for (let j = i + 1; j < people.length; j++) {
+            const [a, b] = [people[i].pos, people[j].pos];
+            assert.ok(Math.hypot(a[0] - b[0], a[2] - b[2]) >= 0.45 || Math.abs(a[1] - b[1]) > 1, `turned at +${e}: people overlap at +${(t - 1000).toFixed(1)} s`);
+          }
+        assert.ok(people.filter((x) => x.riding).length <= 4);
+      }
+    }
+  });
+
+  check("trips (return): planning is deterministic, the departure before the turn stays as it was, later trips change nothing", () => {
+    const { leave, back, schedule } = turnedBack(2, 1, 22);
+    const alone = planTrips([leave], D, world).plans[0];
+    const cut = schedule.plans.find((p) => p.trip.agentId === 1 && p.trip.kind === "depart")!;
+    for (let t = 1000; t < back.start; t += 0.1) assert.deepEqual(sample(cut.person, t).pos, sample(alone.person, t).pos);
+    assert.deepEqual(turnedBack(2, 1, 22).schedule, schedule);
+    const later: TripInput = { agentId: 9, kind: "arrive", start: back.start + 2, floorIndex: 1, deskIndex: 2, spot: site.deskSpot(1, 2) };
+    const withLater = planTrips([leave, back, ...schedule.plans.map((p) => p.trip).filter((t) => t.agentId !== 1), later], D, world);
+    assert.deepEqual(withLater.plans.filter((p) => p.trip.agentId !== 9), schedule.plans);
+  });
+
+  check("trips (comeback): an arrival that continues a departure comes back from the map edge the car left by", () => {
+    const leave: TripInput = { agentId: 1, kind: "depart", start: 1000, floorIndex: 1, deskIndex: 0, spot: site.deskSpot(1, 0) };
+    const again: TripInput = { ...leave, kind: "arrive", start: 1075.2, origin: 1000 };
+    const { plans } = planTrips([leave, again], D, world);
+    const gone = sample(plans[0].car, 1074.99).pos;
+    const first = plans[1].car.find((s) => !s.hidden)!.pts[0];
+    assert.ok(Math.hypot(gone[0] - first[0], gone[2] - first[2]) < 12, `comes back from the same edge (${Math.hypot(gone[0] - first[0], gone[2] - first[2]).toFixed(1)} m apart)`);
+    const fresh = planTrips([{ ...again, origin: null }], D, world).plans[0].car.find((s) => !s.hidden)!.pts[0];
+    assert.ok(Math.hypot(fresh[0] - first[0], fresh[2] - first[2]) > 12, "an ordinary arrival uses its own edge");
+    assert.ok(Math.abs(last(plans[1].person) - (again.start + D.arrive)) < 1e-6);
+  });
 
   check("trips: finished trips drop out only when nothing in progress queued behind them", () => {
     const old = trips("arrive", 0, 0.4);
@@ -416,6 +515,26 @@ for (const [label, floors, expectedSpots] of [
       }
   });
 
+  check("office life: a free agent rests on the sofa or by a window, strolls now and then, and is back at work when a task comes", () => {
+    const free: LifeInput = { agentId: 7, floorIndex: 2, deskIndex: 2, log: arrived([]) };
+    const plan = planLife([free], w, H).plans[0];
+    let resting = 0;
+    let walking = 0;
+    let atDesk = 0;
+    for (let t = T + 30; t < H - 30; t += 1) {
+      const p = sample(plan.segs, t);
+      if (p.act === "sofa" || p.act === "window") resting++;
+      if (p.speed > 0.2) walking++;
+      if (atSeat(free, p.pos)) atDesk++;
+    }
+    assert.ok(resting > 300, `rests (${resting} s)`);
+    assert.ok(walking > 20, `strolls (${walking} s)`);
+    assert.equal(atDesk, 0, "does not sit at the desk");
+    const working: LifeInput = { ...free, log: arrived([{ kind: "working", since: T + 200 }]) };
+    const back = sample(planLife([working], w, H).plans[0].segs, T + 230);
+    assert.ok(atSeat(free, back.pos) && back.sit > 0.99, "back at the desk within 30 s of a new task");
+  });
+
   check("office life: a departure starts where the agent is and still lasts exactly its duration", () => {
     const lounge = planLife(busy, w, H).plans.find((p) => p.agentId === 4)!;
     const tw = tripWorld(building, site, carRoutes(site), walk);
@@ -434,11 +553,12 @@ for (const [label, floors, expectedSpots] of [
 }
 
 check("presence follows the agent status; preview shows everyone", () => {
-  const seen = (["off_site", "arriving", "idle", "working", "waiting_review", "leaving"] as const).map((s) => {
+  const seen = (["off_site", "arriving", "idle", "working", "waiting_review", "leaving", "returning"] as const).map((s) => {
     const p = presence(s, false);
     return `${s}:${p.carParked ? "car" : "-"}${p.atDesk ? "+desk" : ""}`;
   });
-  assert.deepEqual(seen, ["off_site:-", "arriving:car", "idle:car+desk", "working:car+desk", "waiting_review:car+desk", "leaving:car"]);
+  assert.deepEqual(seen, ["off_site:-", "arriving:car", "idle:car+desk", "working:car+desk", "waiting_review:car+desk", "leaving:car", "returning:car"]);
+  assert.deepEqual(presence("returning", false, true), { atDesk: false, carParked: false });
   assert.deepEqual(presence("off_site", true), { atDesk: true, carParked: true });
   assert.deepEqual(presence("arriving", false, true), { atDesk: false, carParked: false }, "an animated trip draws the car and person itself");
   assert.deepEqual(presence("leaving", false, true), { atDesk: false, carParked: false });
