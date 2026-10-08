@@ -1,3 +1,4 @@
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -10,7 +11,9 @@ from app.api.v1.router import api_router
 from app.core.config import get_settings
 from app.db.session import SessionLocal, engine
 from app.executor import Executor, FakeWorker, LlmSettings, LlmWorker, StageWorker, Timings
+from app.executor.job_tools import JobTools
 from app.executor.research import WebTools
+from app.jobs import AdzunaSource, JobSearch, ReedSource
 from app.web import FetchLimits, PageFetcher, SearxClient
 from app.services.errors import (
     ConflictError,
@@ -18,6 +21,9 @@ from app.services.errors import (
     NotFoundError,
     ValidationFailedError,
 )
+
+# httpx logs every request URL at INFO; the Adzuna API takes its key in the URL, so those lines must never appear.
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 ERROR_STATUS: dict[type[DomainError], int] = {
     NotFoundError: status.HTTP_404_NOT_FOUND,
@@ -44,6 +50,20 @@ def build_worker() -> StageWorker:
         tool_timeout=settings.web_tool_timeout_seconds,
         stage_timeout=settings.llm_research_timeout_seconds,
     )
+    fetcher = web.fetcher
+    jobs = JobTools(
+        search=JobSearch(
+            [
+                AdzunaSource(settings.adzuna_app_id, settings.adzuna_app_key, settings.jobs_timeout_seconds, fetcher),
+                ReedSource(settings.reed_api_key, settings.jobs_timeout_seconds),
+            ],
+            cache_seconds=settings.jobs_cache_seconds,
+        ),
+        max_calls=settings.jobs_max_calls,
+        tool_timeout=settings.jobs_timeout_seconds * 2,
+        max_results=settings.jobs_max_results,
+        stage_timeout=settings.llm_research_timeout_seconds,
+    )
     return LlmWorker(
         LlmSettings(
             url=settings.ollama_url,
@@ -57,6 +77,7 @@ def build_worker() -> StageWorker:
             reserve_tokens=settings.llm_reserve_tokens,
         ),
         web=web,
+        jobs=jobs,
     )
 
 

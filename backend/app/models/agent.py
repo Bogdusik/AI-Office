@@ -64,6 +64,8 @@ class Agent(Base):
     )
     model: Mapped[str | None] = mapped_column(String(200))
     web_access: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    tools: Mapped[list[str]] = mapped_column(JSONB, default=list, server_default="[]")
+    """Tool sets besides the web (`AgentTool` values)."""
     desk_index: Mapped[int | None] = mapped_column(Integer)
     status: Mapped[AgentStatus] = mapped_column(
         str_enum(AgentStatus, "agent_status"),

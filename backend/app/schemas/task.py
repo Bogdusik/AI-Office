@@ -53,6 +53,7 @@ class RunRead(ORMModel):
     output: str
     sources: list[str]
     activity: list[dict[str, object]]
+    jobs: dict[str, object] | None
     tokens_per_second: float | None
     started_at: datetime
     finished_at: datetime | None
@@ -63,6 +64,7 @@ class ArtifactRead(ORMModel):
     version: int
     content: str
     sources: list[str]
+    jobs: dict[str, object] | None
     created_at: datetime
 
 

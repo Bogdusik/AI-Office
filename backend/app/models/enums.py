@@ -19,6 +19,13 @@ class RunProvider(StrEnum):
     FAKE = "fake"
 
 
+class AgentTool(StrEnum):
+    """Tool sets an agent may use besides the web (`web_access`); set per agent, never by role in code."""
+
+    JOBS = "jobs"
+    """search_jobs and get_job: vacancies from the Adzuna and Reed APIs."""
+
+
 class AgentStatus(StrEnum):
     OFF_SITE = "off_site"
     ARRIVING = "arriving"
