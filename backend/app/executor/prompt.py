@@ -18,7 +18,7 @@ MIN_KEEP = 200
 """A section cut below this many characters is dropped entirely (only the marker stays)."""
 
 RULES = """# House rules
-- Your output is a draft for the director to review. Never send, publish, submit or apply for anything, and never say you did.
+- The director reviews everything you write before it is used. Never send, publish, submit or apply for anything, and never say you did. Do not label the text as a draft and do not add notes about the review.
 - Do not invent facts: no made-up experience, employers, projects, dates, numbers, names, links or quotes. Use only the director's profile, the task, the director's comments and earlier stage outputs.
 - Every statement about the director must be backed by a specific line of the profile, the task or the comments. Do not infer or estimate anything else: no distances or travel times, no availability, no tools, roles or responsibilities that are not listed, no skill levels. If a detail would help, mark it [NEEDS INPUT: ...].
 - When something you need is missing, write [NEEDS INPUT: what is missing] instead of guessing.

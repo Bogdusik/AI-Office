@@ -165,6 +165,13 @@ export function elevatorOpening(b: BuildingLayout): Opening {
   return { from: shaft.z0 + 0.3, to: shaft.z1 - 0.3 };
 }
 
+/** Doorway from a floor to its stair landing (front landing of the stairwell). */
+export function stairOpening(b: BuildingLayout): Opening {
+  const well = coreLayout(b).stairwell;
+  const mid = well.z1 - DIM.core.landing / 2;
+  return { from: mid - DIM.walk.stairDoor / 2, to: mid + DIM.walk.stairDoor / 2 };
+}
+
 export const entranceDoorX = (b: BuildingLayout) => b.width / 2;
 
 export function floorWalls(b: BuildingLayout, f: FloorLayout): WallMesh[] {
@@ -176,7 +183,7 @@ export function floorWalls(b: BuildingLayout, f: FloorLayout): WallMesh[] {
   const specs: { key: string; normal: [number, number]; length: number; origin: Vec3; alongZ: boolean; openings: Opening[] }[] = [
     { key: "back", normal: [0, -1], length: b.width, origin: [0, y, t], alongZ: false, openings: [] },
     { key: "front", normal: [0, 1], length: b.width, origin: [0, y, b.depth - t], alongZ: false, openings: front },
-    { key: "left", normal: [-1, 0], length: b.depth, origin: [t, y, 0], alongZ: true, openings: [elevatorOpening(b)] },
+    { key: "left", normal: [-1, 0], length: b.depth, origin: [t, y, 0], alongZ: true, openings: [elevatorOpening(b), stairOpening(b)] },
     { key: "right", normal: [1, 0], length: b.depth, origin: [b.width - t, y, 0], alongZ: true, openings: [] },
   ];
   return specs.map((s) => {

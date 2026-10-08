@@ -11,8 +11,8 @@ State lives in the database; the 3D scene only renders it. No business logic in 
 3. Static building — done
 4. Clicks and panels — done
 5. Tasks with a fake executor — done
-6. Real AI via Ollama + web search — 6a (local model) done, 6b (web tools, server room) ← **current**
-7. Life animation
+6. Real AI via Ollama + web search — done (6a local model, 6b web tools and server room)
+7. Life animation — 7a (arrivals and departures) ← **current**, 7b (life in the office) next
 8. Polish
 
 Do only the current stage. Don't jump ahead.
@@ -47,16 +47,16 @@ Floors: the reception and the director-office floor can't be deleted (409).
 - `frontend/src/lib/api.ts` — API types (mirror backend schemas) + `api.*` calls; non-2xx → `ApiError`
 - `frontend/src/lib/errors.ts` — `humanize()`: backend 409/422/404 details → Russian text for the director
 - `frontend/src/lib/labels.ts` — Russian names + colours of agent/task statuses and stages; `lib/stages.ts` — stage ribbon mapping
-- `frontend/src/store/useWorldStore.ts` — polls `/api/v1/state` every 3 s; only replaces `world` when the payload changed
+- `frontend/src/store/useWorldStore.ts` — polls `/api/v1/state` (15 s fallback, SSE refreshes it); only replaces `world` when the payload changed (`motion.server_time` ignored); keeps `clockOffset` = server clock − browser clock
 - `frontend/src/store/useTasksStore.ts` — all tasks (`GET /tasks`), reloaded when `world` changes or after an action, not every poll
 - `frontend/src/store/actions.ts` — `mutate()`: every write refreshes world + tasks right away (also on error) and bumps `revision` so open details refetch
-- `frontend/src/store/useUiStore.ts` — UI-only state: selected floor, `?preview=1`, camera home/focus requests, selection, hover, open task, director panel, collapsed HUD blocks; `back()` = Esc
+- `frontend/src/store/useUiStore.ts` — UI-only state: selected floor, `?preview=1`, camera home/focus requests, selection, hover, open task, director panel, collapsed HUD blocks, `animation` (HUD switch, remembered in localStorage), `follow` (agent the camera follows); `back()` = Esc
 - `frontend/src/scene/layout/` — **all** scene geometry as pure functions (import as `@/scene/layout`):
   `types` (Part, place), `dims` (DIM, CAMERA, FADE), `models` (primitive furniture/cars/trees as parts), `building` (floors, zones, walls, core, stairs, entrance, roof),
-  `site` (roads, intersection, parking, fence, car route graph), `greenery`, `camera` (home view, wall/roof fading), `picks` (selection keys + click volumes), `assemble` (`buildScene` → parts, walls, labels, roof, routes, picks)
-- `frontend/scripts/check-layout.mts` — `npm run check:layout`: parking/route/pick invariants of the pure layout + stage ribbon (no test runner)
+  `site` (roads, intersection, parking, fence, car route graph), `greenery`, `camera` (home view, wall/roof fading), `picks` (selection keys + click volumes), `walk` (walking graph, path search, obstacle footprints), `trips` (trip planner + samplers), `moving` (lift cabin, sliding doors, barrier arms, animated figure), `assemble` (`buildScene` → parts, walls, labels, roof, routes, picks, moving props)
+- `frontend/scripts/check-layout.mts` — `npm run check:layout`: parking/route/pick/walking-graph invariants of the pure layout, trip planner (exact duration, no overlaps, lift capacity, stability) + stage ribbon (no test runner)
 - `frontend/src/scene/palette.ts` — colours; one accent (`#ff7a59`) for director-related things
-- `frontend/src/components/scene/` — R3F scene from primitives (render only, reads stores)
+- `frontend/src/components/scene/` — R3F scene from primitives (render only, reads stores); `motion/` moves trips in one `useFrame`
 - `frontend/src/components/hud/` — HUD overlay (`Hud` frame: metrics, floors, search, director button | stage ribbon, office list), Esc hotkey
 - `frontend/src/components/panels/` — right panels (agent, task card, hire, parking spot) and the full-screen director panel; `ui.tsx` shared primitives
 
@@ -64,12 +64,12 @@ Floors: the reception and the director-office floor can't be deleted (409).
 - Office floors: desk grid (from `capacity`; desk with 2 monitors, speakers, bottle, executive chair), side zone (director office or lounge), kitchen zone. Floor flags (DB, set by migration/seed, at most one each): `has_kitchen` (Career) — the only kitchen, with a glass partition and doorway between desks and the lounge/kitchen side; `has_server_room` (Engineering) — server room in the kitchen zone (4 racks, LEDs green idle / amber when `/state.stats.model_busy`), click → server panel. Other office floors leave that zone open (plants). The reception floor has no desks: two-seat counter with two static staff figures (decor, not agents), guest seating groups, big glass doors with canopy and card reader.
 - Rendering: `buildScene()` returns parts; `parts/Batches` draws them with one InstancedMesh per (shape, finish). Walls are merged per wall (`parts/Walls`) so each can fade. Only the sun casts shadows; no other light sources.
 - Roof (parapet, HVAC, AC units) shows only in "All" mode and fades in when zoomed well out (`roofOpacity`).
-- Roads: main road + cross road with an intersection; UK left-hand traffic. `routes()` gives arrive (map edge → entry barrier), toSpot, fromSpot, depart (exit barrier → map edge); `?routes=1` draws them. Cars don't move yet (stage 7).
+- Roads: main road + cross road with an intersection; UK left-hand traffic. `routes()` gives arrive (map edge → entry barrier), toSpot, fromSpot, depart (exit barrier → map edge); `?routes=1` draws them. The parking aisle has two driving lines (in −z side, out +z side); cars park nose-in and reverse out.
 - Floors stack by sorted `number`. The slab pitch comes from `floorPitch()`: just enough air so every back-row plaque of a lower floor is visible from the home camera.
-- Core on the −x side: glass elevator shaft in front (landing doors on the building's inner wall), switchback stairs with landings and rails behind it.
+- Core on the −x side: glass elevator shaft in front (landing doors on the building's inner wall), switchback stairs with landings and rails behind it; every floor has a doorway to its stair landing.
 - Walls exist on all four sides and fade when they face the camera (`facadeOpacity` + `parts/Fade`), damped per frame, no React re-renders. Entrance doors/canopy never fade.
 - Labels and plaques turn to the camera around Y (`parts/FaceCamera`); don't use drei `Billboard` with locked axes — it flips when the camera is behind.
-- Agent + their car are shown only when `status !== 'off_site'`, or always with `?preview=1` (UI-only, never writes to the DB).
+- Agent + their car are shown only when `status !== 'off_site'`, or always with `?preview=1` (UI-only, never writes to the DB). With the animation on, an agent on a trip (`arriving` + trip `arrive`, `leaving` + trip `depart`) is drawn by the motion layer instead (`presence(…, onTrip)`).
 - Parking: spot 0 director, then one spot per desk (floor order, `desk_index`), then 2 guest spots; separate entry/exit lanes with barriers; perimeter fence with a gap at the lanes.
 - Camera: drei `CameraControls` (orthographic). Left drag rotates 360° (polar clamped 15–75°), right drag pans (target clamped to the whole site), wheel zooms smoothly to the cursor; "home" animates back to `cameraHome()`.
 - Labels use a local font with Cyrillic (`public/fonts/Inter-SemiBold.ttf`), each wrapped in its own Suspense. Plaques and car tags show title + status (stripe = status colour).
@@ -88,7 +88,7 @@ Floors: the reception and the director-office floor can't be deleted (409).
 - Pick order: `in_progress` (after a restart) → `changes_requested` → `queued` by position.
 - Agent `status`: `off_site` + work → `arriving` (EXECUTOR_ARRIVE_SECONDS) → `idle` → `working` (stages; one `Run` each) → after self_check a new artifact version, task → `needs_review`, next task. No work but something in review → `waiting_review` (stays). Only paused tasks left → `idle` (stays, waits for the director). Everything finished/cancelled → `leaving` (EXECUTOR_DEPART_SECONDS) → `off_site`. A new task during `leaving` brings the agent back after it has left.
 - Pause takes effect at the stage boundary (the running stage finishes and is kept); resume continues from the first stage without a successful run of the current version. Cancel stops the running stage at once (run `cancelled`). Comments are read at the start of every stage. A stage error → run `failed` with the error, task `failed`, agent moves on.
-- Restart: `running` runs become `interrupted`, the stage runs again; `arriving` restarts, `leaving` completes, other statuses are reconciled by the loop.
+- Restart: `running` runs become `interrupted`, the stage runs again; `arriving`/`leaving` wait only what is left of their duration counted from `agents.status_since`; other statuses are reconciled by the loop.
 - Events: `app/events.py` in-process bus; services and the executor publish `agent` (status), `task` (status/stage, also on create), `artifact` (new version). `GET /api/v1/events` streams them as SSE (`retry`, 15 s ping). Frontend `EventSync` refreshes world + tasks on any event (debounced) and shows a notice for `needs_review`; `/state` polling is a 15 s fallback.
 - Scene presence (`scene/layout/presence.ts`): arriving → car only; idle/working/waiting_review → car + person at the desk; leaving → car only; off_site → nothing. `?preview=1` shows everyone.
 - Run the backend with `--timeout-graceful-shutdown 2`: open SSE streams otherwise block reloads. On Windows `--reload` can still hang while a model request streams (the old process keeps serving); restart uvicorn by hand after backend edits when the LLM worker is busy.
@@ -112,10 +112,19 @@ Floors: the reception and the director-office floor can't be deleted (409).
 - `GET /api/v1/server-room`: Ollama (version, loaded models, VRAM), GPU via `nvidia-smi`, SearXNG health, last request speed (`run.tokens_per_second` from Ollama `eval_duration`), who uses the model / queue, tokens today and total per agent (provider `fake` excluded).
 - If Ollama is killed by hand, also kill its `llama-server` runners: an orphaned runner keeps a second copy of the model in VRAM and drops generation to ~25 tok/s.
 
+## Arrivals and departures (stage 7a)
+- Lifecycle rules are unchanged; the animation only shows them. `agents.status_since` (start of the status) and the latest trip (`trip_kind` arrive|depart, `trip_started_at`, kept after it ends) are set by `Agent.set_status`. `/state` gives `status_since`, `trip` per agent and `motion` {`arrive_seconds`, `depart_seconds`, `server_time`}. Trip lengths: `EXECUTOR_ARRIVE_SECONDS` / `EXECUTOR_DEPART_SECONDS` (75 s each; a lone trip at natural speed takes 61–79 s).
+- `scene/layout/walk.ts`: walking graph (entrance, lobby, lift and stair landings on every floor, switchback stair flights, aisles, every desk approach + seat, kitchen, lounge, server-room door, director's office; outside: car side of every spot → aisle → pedestrian gate in the west fence → along the front → card reader → doors). `findPath` = Dijkstra (stairs cost their slower pace). The lift is not an edge: the planner rides it.
+- `scene/layout/trips.ts` — the planner, pure: trips in order of start; each plan depends only on earlier ones (reservations are only appended), so a new trip never moves anyone and a reload shows the same picture. Queues: entry barrier (an arriving car sets off later instead of queueing on the road), parking aisle + exit barrier (a leaving car waits in its spot), card reader (people wait a step behind), lift (capacity 4, joins a run that stops at both floors, slots a new run into an idle gap or appends one, homes to the ground floor; stairs when they are quicker). One pace factor per trip (0.6–1.3) chosen on a grid; the final stretch (walk to the desk, drive to the map edge) is retimed so the trip ends exactly on its duration. `relevantTrips` keeps finished trips while a later trip in progress may have queued behind them.
+- Rendering: `components/scene/motion/Motion.tsx` samples everything in one `useFrame` from server time (`clockOffset`): cars, people (walk cycle, sitting, tapping), lift cabin, lift landing doors, entrance doors, barrier arms, reader light. People about to pass through each other step aside (`samplePeople`). Monitors switch on when the agent has sat down (status `idle`) and off when they stand up (`leaving`). Between floors a person or the cabin is hidden if either floor is hidden.
+- HUD «Анимация» off → stage 6 behaviour (appear/disappear). Agent panel «Следить»: the camera target follows the person or their car (at the desk: the desk); «Домой» or another selection stops it.
+- Dev only: `window.__aiOffice.frames()` (frame work + intervals), `.view(target, zoom)`; `window.__aiOfficeMotion` (latest poses).
+
 ## Rules
 - Secrets only in `.env` files (git-ignored); keep `.env.example` in sync.
 - Schema changes only via Alembic migrations.
 - No auth, no extra libraries without a reason.
 - No sizes or coordinates in components: everything comes from `scene/layout/` (models included); components only render.
+- Moving things are pure functions of (trips, server time): never keep animation state in React or the DB.
 - Python edits on Windows: always pass `encoding="utf-8"` (the default cp1252 corrupts non-ASCII).
 - Merge feature branches into `main` with a regular merge (no squash).

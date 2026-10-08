@@ -1,10 +1,12 @@
 # AI Office
 
-Local 3D office where AI agents are the staff. Stage 6b: the building from `GET /api/v1/state` with selection, panels and a HUD; a background executor drives agents (arrive → work through stages → review → leave) on a local model in Ollama, live over server-sent events. Agents with web access search and read pages (local SearXNG) and cite sources.
+Local 3D office where AI agents are the staff. Stage 7a: the building from `GET /api/v1/state` with selection, panels and a HUD; a background executor drives agents (arrive → work through stages → review → leave) on a local model in Ollama, live over server-sent events. Agents with web access search and read pages (local SearXNG) and cite sources. Agents drive in, park, badge in, take the lift or the stairs to their desk, and leave the same way.
 
 
 Controls: left drag — rotate, right drag — pan, wheel — zoom to cursor, «Домой» — back to the default view.
 Click an agent, a free desk, the director's office or a parking spot to open its panel; Esc closes the innermost layer. «Кабинет директора» opens the team table, review queue, profile and floor management.
+
+«Анимация» in the HUD turns the arrival/departure animation off (agents and cars then appear and disappear); «Следить» in an agent's panel makes the camera follow them.
 
 Add `?preview=1` to the URL to see every agent at their desk and every car parked, without touching the database. `?routes=1` draws the car route graph.
 
@@ -45,7 +47,7 @@ cd backend; .\.venv\Scripts\Activate.ps1; uvicorn app.main:app --reload --port 8
 cd frontend; npm run dev
 ```
 
-The task executor starts with the backend. Its timings live in `backend/.env` (`EXECUTOR_ARRIVE_SECONDS`, `EXECUTOR_STAGE_SECONDS`, `EXECUTOR_DEPART_SECONDS`, 5 s each by default); `EXECUTOR_ENABLED=false` turns it off. `--timeout-graceful-shutdown 2` lets the server reload while browsers hold the `/api/v1/events` stream open.
+The task executor starts with the backend. Its timings live in `backend/.env` (`EXECUTOR_ARRIVE_SECONDS` and `EXECUTOR_DEPART_SECONDS` 75 s — the length of the drive-in/drive-out animation, `EXECUTOR_STAGE_SECONDS` 5 s for the fake worker); `EXECUTOR_ENABLED=false` turns it off. `--timeout-graceful-shutdown 2` lets the server reload while browsers hold the `/api/v1/events` stream open.
 
 **Local model.** Install [Ollama](https://ollama.com) (0.35+), then `ollama pull qwen3.8:27b` (17 GB; fits a 24 GB GPU with a 16K context) and set `EXECUTOR_WORKER=llm` in `backend/.env` (`fake` gives placeholder text with no model). `OLLAMA_MODEL` sets the default model, an agent's «Модель» field overrides it. The HUD dot next to «API» turns red when Ollama is down or the model is missing. Model comparison: `docs/model-benchmark.json`.
 

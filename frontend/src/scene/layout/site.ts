@@ -24,6 +24,9 @@ export type SiteLayout = {
   entryLaneX: number;
   exitLaneX: number;
   aisleZ: number;
+  /** Driving lines in the aisle (UK, keep left): inbound cars head east on `aisleIn`, outbound west on `aisleOut`. */
+  aisleIn: number;
+  aisleOut: number;
   barrierZ: number;
   barriers: Barrier[];
   arrows: Arrow[];
@@ -47,7 +50,7 @@ export function siteLayout(b: BuildingLayout): SiteLayout {
   const lanesW = p.laneW * 2 + p.island;
   const x0 = b.width + p.gap;
   const spotsX0 = x0 + lanesW + 0.5;
-  const x1 = spotsX0 + perRow * p.spotW + 0.6;
+  const x1 = spotsX0 + perRow * p.spotW + p.endRoom;
 
   const frontRow = { z0: roadZ0 - p.curb - p.spotD, z1: roadZ0 - p.curb };
   const aisle = { z0: frontRow.z0 - p.aisle, z1: frontRow.z0 };
@@ -64,7 +67,7 @@ export function siteLayout(b: BuildingLayout): SiteLayout {
   const offsets = capacities.map((_, i) => capacities.slice(0, i).reduce((a, c) => a + c, 0));
 
   const island: Rect = { x0: x0 + p.laneW, x1: x0 + p.laneW + p.island, z0: aisle.z1 + 0.6, z1: roadZ0 - 0.4 };
-  const barrierZ = roadZ0 - 2.2;
+  const barrierZ = roadZ0 - p.barrierSetback;
   const w = DIM.road.width;
   const off = w / 4;
   const crossX = x1 + DIM.cross.gapFromLot + w / 2;
@@ -88,10 +91,13 @@ export function siteLayout(b: BuildingLayout): SiteLayout {
     entryLaneX: x0 + p.laneW / 2,
     exitLaneX: island.x1 + p.laneW / 2,
     aisleZ: (aisle.z0 + aisle.z1) / 2,
+    aisleIn: (aisle.z0 + aisle.z1) / 2 - p.aisleLane,
+    aisleOut: (aisle.z0 + aisle.z1) / 2 + p.aisleLane,
     barrierZ,
+    // Arms stop short of the outer kerb: people walk past the entry barrier along the fence.
     barriers: [
-      { post: [island.x0 + 0.3, 0, barrierZ], length: p.laneW, direction: -1 },
-      { post: [island.x1 - 0.3, 0, barrierZ], length: p.laneW, direction: 1 },
+      { post: [island.x0 + 0.3, 0, barrierZ], length: p.laneW - p.armShort, direction: -1 },
+      { post: [island.x1 - 0.3, 0, barrierZ], length: p.laneW - p.armShort, direction: 1 },
     ],
     arrows: [
       { position: [x0 + p.laneW / 2, 0, barrierZ - 3.5], yaw: 0 },
@@ -102,7 +108,9 @@ export function siteLayout(b: BuildingLayout): SiteLayout {
       { from: [x0 - fi, lot.z0 - fi], to: [x1 + fi, lot.z0 - fi] },
       { from: [x1 + fi, lot.z0 - fi], to: [x1 + fi, roadZ0 - fi] },
       { from: [x0 + lanesW, roadZ0 - fi], to: [x1 + fi, roadZ0 - fi] },
-      { from: [x0 - fi, lot.z0 - fi], to: [x0 - fi, roadZ0 - fi] },
+      // West side: a pedestrian gate level with the aisle.
+      { from: [x0 - fi, lot.z0 - fi], to: [x0 - fi, (aisle.z0 + aisle.z1) / 2 - p.gate / 2] },
+      { from: [x0 - fi, (aisle.z0 + aisle.z1) / 2 + p.gate / 2], to: [x0 - fi, roadZ0 - fi] },
     ],
     deskSpot: (floorIndex, deskIndex) => 1 + (offsets[floorIndex] ?? 0) + deskIndex,
     focus: { x0: b.core.x0, x1: cross.x1, z0: Math.min(b.core.z0, lot.z0), z1: main.z1 },
@@ -110,7 +118,7 @@ export function siteLayout(b: BuildingLayout): SiteLayout {
   };
 }
 
-/* ---------- route graph (for moving cars in stage 7) ---------- */
+/* ---------- car routes ---------- */
 
 export type MapEdge = "west" | "east" | "north" | "south";
 export const MAP_EDGES: MapEdge[] = ["west", "east", "north", "south"];
@@ -145,8 +153,8 @@ export function routes(site: SiteLayout): Routes {
       north: [pt(sb, cross.z0), pt(sb, wb), pt(ex, wb), inGate],
       south: [pt(nb, cross.z1), pt(nb, wb), pt(ex, wb), inGate],
     },
-    toSpot: site.spots.map((s) => [inGate, pt(ex, site.aisleZ), pt(s.center[0], site.aisleZ), pt(s.center[0], s.center[2])]),
-    fromSpot: site.spots.map((s) => [pt(s.center[0], s.center[2]), pt(s.center[0], site.aisleZ), pt(xx, site.aisleZ), outGate]),
+    toSpot: site.spots.map((s) => [inGate, pt(ex, site.aisleIn), pt(s.center[0], site.aisleIn), pt(s.center[0], s.center[2])]),
+    fromSpot: site.spots.map((s) => [pt(s.center[0], s.center[2]), pt(s.center[0], site.aisleOut), pt(xx, site.aisleOut), outGate]),
     depart: {
       east: [outGate, pt(xx, eb), pt(main.x1, eb)],
       west: [outGate, pt(xx, wb), pt(main.x0, wb)],

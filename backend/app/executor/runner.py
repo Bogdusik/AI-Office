@@ -233,7 +233,7 @@ class Executor:
             loaded = await self._load(agent_id)
             if loaded is None:
                 return
-            status, tasks = loaded
+            status, since, tasks = loaded
             nxt = rules.pick_next_task(tasks)
 
             if status == AgentStatus.OFF_SITE:
@@ -241,11 +241,11 @@ class Executor:
                     return
                 await self._set_status(agent_id, AgentStatus.ARRIVING)
             elif status == AgentStatus.ARRIVING:
-                if await self._sleep(self._t.arrive):
+                if await self._sleep(self._remaining(self._t.arrive, since)):
                     return
                 await self._set_status(agent_id, AgentStatus.IDLE)
             elif status == AgentStatus.LEAVING:
-                if await self._sleep(self._t.depart):
+                if await self._sleep(self._remaining(self._t.depart, since)):
                     return
                 await self._set_status(agent_id, AgentStatus.OFF_SITE)
             elif nxt is not None:
@@ -259,7 +259,12 @@ class Executor:
             else:
                 await self._set_status(agent_id, AgentStatus.LEAVING)
 
-    async def _load(self, agent_id: int) -> tuple[AgentStatus, list[Task]] | None:
+    @staticmethod
+    def _remaining(duration: float, since: datetime) -> float:
+        """Arriving and leaving last `duration` from the status start, also across a server restart."""
+        return duration - (now() - since).total_seconds()
+
+    async def _load(self, agent_id: int) -> tuple[AgentStatus, datetime, list[Task]] | None:
         async with self._sessions() as s:
             agent = await s.scalar(
                 select(Agent).where(Agent.id == agent_id).execution_options(populate_existing=True)
@@ -271,14 +276,14 @@ class Executor:
                     select(Task).where(Task.agent_id == agent_id, Task.status.in_(rules.ACTIVE_STATUSES))
                 )
             ).all()
-            return agent.status, list(tasks)
+            return agent.status, agent.status_since, list(tasks)
 
     async def _set_status(self, agent_id: int, status: AgentStatus) -> None:
         async with self._sessions() as s:
             agent = await s.scalar(select(Agent).where(Agent.id == agent_id).with_for_update())
             if agent is None or agent.archived_at is not None or agent.status == status:
                 return
-            agent.status = status
+            agent.set_status(status, now())
             await s.commit()
         publish_agent(agent_id, status)
 

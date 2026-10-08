@@ -30,6 +30,7 @@ import { DIM } from "./dims";
 import { greenery } from "./greenery";
 import * as M from "./models";
 import { type Pick, deskPick, directorPick, serverPick, spotPick } from "./picks";
+import { type MovingSpec, movingSpec } from "./moving";
 import { type Routes, type SiteLayout, routes, siteLayout } from "./site";
 import { type Box, type FloorInput, type Part, type Placement, type Rect, type Vec3, boxIn, cube, part, place, rectCenter, rectSize } from "./types";
 
@@ -56,6 +57,7 @@ export type SceneSpec = {
   labels: LabelSpec[];
   roof: Part[];
   picks: Pick[];
+  moving: MovingSpec;
 };
 
 const at = (x: number, y: number, z: number, yaw = 0): Placement => ({ position: [x, y, z], yaw });
@@ -198,20 +200,13 @@ function coreStorey(b: BuildingLayout, f: FloorLayout, floor: FloorData, isTop: 
   parts.push(cube([sx, y + shaftH / 2, sz], [sw, shaftH, sd], PALETTE.shaftGlass, "glass"));
   for (const x of [shaft.x0, shaft.x1]) for (const z of [shaft.z0, shaft.z1]) parts.push(cube([x, y + shaftH / 2, z], [0.1, shaftH, 0.1], PALETTE.steel));
   parts.push(cube([sx, y + 0.05, sz], [sw, 0.1, sd], PALETTE.steel));
-  if (f.isGround) {
-    parts.push(cube([sx, y + 1.2, sz], [sw - 0.3, 2.4, sd - 0.3], PALETTE.metal));
-    parts.push(cube([sx, y + 2.45, sz], [sw - 0.25, 0.1, sd - 0.25], PALETTE.steel));
-  }
 
   const o = elevatorOpening(b);
   const mid = (o.from + o.to) / 2;
   const ow = o.to - o.from;
   const dx = DIM.wall + 0.03;
   parts.push(cube([dx, y + 2.4, mid], [0.06, 0.2, ow + 0.3], PALETTE.steel));
-  for (const s of [-1, 1]) {
-    parts.push(cube([dx, y + 1.15, mid + (s * (ow + 0.15)) / 2], [0.06, 2.3, 0.15], PALETTE.steel));
-    parts.push(cube([dx - 0.02, y + 1.15, mid + (s * ow) / 4], [0.04, 2.3, ow / 2 - 0.02], PALETTE.metal));
-  }
+  for (const s of [-1, 1]) parts.push(cube([dx, y + 1.15, mid + (s * (ow + 0.15)) / 2], [0.06, 2.3, 0.15], PALETTE.steel));
 
   if (isTop) {
     parts.push(boxPart(shift(boxIn({ ...stairwell, z0: stairwell.z1 - DIM.core.landing }, -DIM.slab, 0), y), PALETTE.core));
@@ -229,7 +224,7 @@ function coreStorey(b: BuildingLayout, f: FloorLayout, floor: FloorData, isTop: 
 
 function entranceParts(e: EntranceLayout): Part[] {
   const [x, y, z] = e.door;
-  const { w, leaf } = DIM.door;
+  const { w } = DIM.door;
   const h = DIM.floorHeight - DIM.slab;
   const fr = 0.14;
   const [rx, , rz] = e.reader;
@@ -237,11 +232,6 @@ function entranceParts(e: EntranceLayout): Part[] {
     flat(e.walkway, 0.02, PALETTE.curb, "matte"),
     ...[-1, 1].map((s) => cube([x + (s * (w - fr)) / 2, y + h / 2, z], [fr, h, 0.24], PALETTE.dark)),
     cube([x, y + h - fr / 2, z], [w, fr, 0.24], PALETTE.dark),
-    cube([x, y + h / 2, z], [0.08, h, 0.22], PALETTE.dark),
-    ...[-1, 1].flatMap((s) => [
-      cube([x + (s * (leaf + 0.08)) / 2, y + (h - fr) / 2, z], [leaf - 0.06, h - fr, 0.04], PALETTE.glass, "glass"),
-      cube([x + s * 0.22, y + 1.15, z + 0.07], [0.05, 1.2, 0.05], PALETTE.metal),
-    ]),
     boxPart(e.canopy, PALETTE.slab),
     cube([x, e.canopy.position[1] - 0.1, z + DIM.canopy.d], [DIM.canopy.w, 0.06, 0.06], PALETTE.dark),
     cube([rx, 0.6, rz], [0.16, 1.2, 0.16], PALETTE.dark),
@@ -312,14 +302,7 @@ function parkingParts(site: SiteLayout, labels: LabelSpec[]): Part[] {
   for (const a of site.arrows) {
     parts.push(...place([cube([0, 0.035, 0.6], [0.28, 0.01, 1.6], PALETTE.roadLine, "decal"), part("prism", [0, 0.035, -0.45], [1.2, 0.01, 1.1], PALETTE.roadLine, "decal", [0, Math.PI, 0])], at(a.position[0], 0, a.position[2], a.yaw)));
   }
-  for (const b of site.barriers) {
-    const stripes = 7;
-    const stripe = b.length / stripes;
-    parts.push(cube([b.post[0], 0.55, b.post[2]], [0.36, 1.1, 0.36], PALETTE.dark));
-    for (let i = 0; i < stripes; i++) {
-      parts.push(cube([b.post[0] + b.direction * (0.18 + stripe * (i + 0.5)), 0.98, b.post[2]], [stripe, 0.1, 0.1], i % 2 === 0 ? PALETTE.accent : "#ffffff"));
-    }
-  }
+  for (const b of site.barriers) parts.push(cube([b.post[0], 0.55, b.post[2]], [0.36, 1.1, 0.36], PALETTE.dark));
   for (const line of site.fence) {
     const [x0, z0] = line.from;
     const [x1, z1] = line.to;
@@ -406,5 +389,5 @@ export function buildScene(floors: readonly FloorData[], visible: (floorNumber: 
   }
   parts.push(...greeneryParts(greenery(building, site, entrance)));
 
-  return { building, site, entrance, routes: routes(site), parts, walls, labels, roof: roofParts(building), picks };
+  return { building, site, entrance, routes: routes(site), parts, walls, labels, roof: roofParts(building), picks, moving: movingSpec(building, site, entrance) };
 }

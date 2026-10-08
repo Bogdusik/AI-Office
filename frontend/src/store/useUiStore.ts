@@ -18,6 +18,12 @@ type UiStore = {
   /** Camera flight request: the scene resolves the key to a position once that object is visible. */
   focus: { key: string; nonce: number } | null;
   collapsed: Record<HudBlock, boolean>;
+  /** Animated arrivals and departures; off: people and cars simply appear and disappear (stage 6). */
+  animation: boolean;
+  /** Agent the camera follows (person or car), if any. */
+  follow: number | null;
+  setAnimation: (on: boolean) => void;
+  setFollow: (agentId: number | null) => void;
   selectFloor: (floor: FloorSelection) => void;
   setPreview: (preview: boolean) => void;
   setRoutes: (routes: boolean) => void;
@@ -33,6 +39,17 @@ type UiStore = {
   back: () => void;
 };
 
+const ANIMATION_KEY = "ai-office:animation";
+
+/** The director's last choice, read after hydration (the server always renders with animation on). */
+export function storedAnimation(): boolean {
+  try {
+    return localStorage.getItem(ANIMATION_KEY) !== "0";
+  } catch {
+    return true;
+  }
+}
+
 export const useUiStore = create<UiStore>((set, get) => ({
   selectedFloor: "all",
   preview: false,
@@ -44,14 +61,24 @@ export const useUiStore = create<UiStore>((set, get) => ({
   directorOpen: false,
   focus: null,
   collapsed: { metrics: false, list: false, ribbon: false },
+  animation: true,
+  follow: null,
+  setAnimation: (animation) => {
+    try {
+      localStorage.setItem(ANIMATION_KEY, animation ? "1" : "0");
+    } catch {}
+    set({ animation, follow: animation ? get().follow : null });
+  },
+  setFollow: (follow) => set({ follow }),
   selectFloor: (selectedFloor) => set({ selectedFloor }),
   setPreview: (preview) => set({ preview }),
   setRoutes: (routes) => set({ routes }),
-  requestHome: () => set((s) => ({ homeRequest: s.homeRequest + 1 })),
+  requestHome: () => set((s) => ({ homeRequest: s.homeRequest + 1, follow: null })),
   select: (selection) =>
     set((s) => {
       const same = s.selection && selection && selectionKey(s.selection) === selectionKey(selection);
-      return { selection, taskId: same ? s.taskId : null };
+      const keepFollow = selection?.kind === "agent" && selection.id === s.follow;
+      return { selection, taskId: same ? s.taskId : null, follow: keepFollow ? s.follow : null };
     }),
   hover: (hovered) => {
     if (get().hovered !== hovered) set({ hovered });

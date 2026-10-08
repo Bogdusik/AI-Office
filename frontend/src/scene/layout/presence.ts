@@ -12,7 +12,11 @@ const BY_STATUS: Record<AgentStatus, Presence> = {
   leaving: { atDesk: false, carParked: true },
 };
 
-/** `?preview=1` puts everyone in place without touching the data. */
-export function presence(status: AgentStatus, preview: boolean): Presence {
-  return preview ? { atDesk: true, carParked: true } : BY_STATUS[status];
+/**
+ * `?preview=1` puts everyone in place without touching the data. `onTrip`: the agent is arriving or leaving
+ * and the trip is animated, so the moving car and person are drawn instead of the static ones.
+ */
+export function presence(status: AgentStatus, preview: boolean, onTrip = false): Presence {
+  if (preview) return { atDesk: true, carParked: true };
+  return onTrip ? { atDesk: false, carParked: false } : BY_STATUS[status];
 }
