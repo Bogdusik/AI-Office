@@ -1,7 +1,7 @@
 "use client";
 
 import type { WorldState } from "@/lib/api";
-import { agentTag } from "@/lib/labels";
+import { activityCaption, agentTag } from "@/lib/labels";
 import { type FloorData, type SceneSpec, presence } from "@/scene/layout";
 import { useUiStore } from "@/store/useUiStore";
 import { Batches } from "./parts/Batches";
@@ -30,7 +30,8 @@ export function toFloorData(world: WorldState, preview: boolean, animated: boole
       roleKey: a.role_key,
       title: a.title,
       ...presence(a.status, preview, animated && onTrip(a), living && inOffice(a)),
-      status: agentTag(a).label,
+      // With office life the desk plaque says what is really going on ("Пишет черновик", "Читает gov.uk").
+      status: (living && inOffice(a) ? activityCaption(a) : null) ?? agentTag(a).label,
       statusColor: agentTag(a).color,
     })),
   }));
