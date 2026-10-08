@@ -8,7 +8,9 @@ const components: Components = {
   h2: ({ children }) => <h2 className="mt-3 mb-1.5 text-[15px] font-semibold text-ink first:mt-0">{children}</h2>,
   h3: ({ children }) => <h3 className="mt-2.5 mb-1 text-sm font-semibold text-ink first:mt-0">{children}</h3>,
   p: ({ children }) => <p className="my-2 leading-relaxed first:mt-0 last:mb-0">{children}</p>,
-  ul: ({ children }) => <ul className="my-2 list-disc space-y-1 pl-5">{children}</ul>,
+  ul: ({ children, className }) => (
+    <ul className={`my-2 space-y-1 ${className?.includes("contains-task-list") ? "list-none pl-1 [&_input]:mr-1.5 [&_input]:align-middle" : "list-disc pl-5"}`}>{children}</ul>
+  ),
   ol: ({ children }) => <ol className="my-2 list-decimal space-y-1 pl-5">{children}</ol>,
   blockquote: ({ children }) => <blockquote className="my-2 border-l-2 border-accent/50 pl-3 text-ink/70">{children}</blockquote>,
   code: ({ children }) => <code className="rounded bg-ink/6 px-1 py-0.5 font-mono text-[12px]">{children}</code>,
