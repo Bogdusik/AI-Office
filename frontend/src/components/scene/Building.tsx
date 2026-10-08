@@ -11,10 +11,10 @@ import { Roof } from "./parts/Roof";
 import { RoutesOverlay } from "./parts/RoutesOverlay";
 import { SceneLabels } from "./parts/SceneLabels";
 import { Walls } from "./parts/Walls";
-import { onTrip } from "./motion/Motion";
+import { inOffice, onTrip } from "./motion/Motion";
 
 /** `animated`: agents on an animated trip are left out of the static scene (the motion layer draws them). */
-export function toFloorData(world: WorldState, preview: boolean, animated: boolean): FloorData[] {
+export function toFloorData(world: WorldState, preview: boolean, animated: boolean, living: boolean): FloorData[] {
   return world.floors.map((f) => ({
     id: f.id,
     number: f.number,
@@ -29,7 +29,7 @@ export function toFloorData(world: WorldState, preview: boolean, animated: boole
       deskIndex: a.desk_index,
       roleKey: a.role_key,
       title: a.title,
-      ...presence(a.status, preview, animated && onTrip(a)),
+      ...presence(a.status, preview, animated && onTrip(a), living && inOffice(a)),
       status: agentTag(a).label,
       statusColor: agentTag(a).color,
     })),

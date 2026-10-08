@@ -3,7 +3,7 @@
  * (`/state` → `activity_log`), the clock and their number. No model calls, no randomness that isn't hashed.
  *
  * - working: at the desk, typing. waiting for the model: at the desk leaning back; after `shortWait` s
- *   (or `busyWait` with two or more waiting ahead) a coffee trip — queue, brew, back with a cup.
+ *   (or `busyWait` when someone else is already waiting too) a coffee trip — queue, brew, back with a cup.
  * - waiting for review: a seat on the lounge sofa (kitchen floor), else a place by the window on the own floor.
  * - idle: strolls on the own floor; idle and review agents on the same floor may meet for a talk.
  * - Any new activity interrupts: the agent heads to where the new activity wants them, in a hurry when
@@ -286,7 +286,8 @@ const atDesk = (s: State, a: LifeInput) => s.seated?.seat === WALK.seat(a.floorI
 function* waitingModel(c: Ctx, a: LifeInput, e: Episode, s0: State, out: Seg[], cups: Interval[]): Generator<number, State, void> {
   let s = sitDown(c, s0, deskSeat(a), out);
   const ahead = c.waiting(a.agentId, e.from);
-  const decide = Math.max(s.t, e.from + (ahead >= 2 ? LIFE.busyWait : LIFE.shortWait));
+  // Several in the model queue (someone else already waiting) → coffee sooner.
+  const decide = Math.max(s.t, e.from + (ahead >= 1 ? LIFE.busyWait : LIFE.shortWait));
   if (decide >= e.to || decide >= c.horizon) return hold(s, Infinity, out, "lean", 0);
   s = hold(s, decide, out, "lean", 0);
   yield decide;

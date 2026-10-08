@@ -47,7 +47,7 @@ export const DIM = {
     sofaSide: 1.65,
     sofaFront: 0.83,
     queueExit: 0.8,
-    /** Waiting for the model longer than this (s) → coffee; `busyWait` when two or more wait ahead. */
+    /** Waiting for the model longer than this (s) → coffee; `busyWait` when someone else is already waiting too. */
     shortWait: 30,
     busyWait: 10,
     /** At most this many coffee trips at a time (the queue has 4 places). */

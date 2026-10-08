@@ -837,8 +837,13 @@ export function naturalDurations(w: TripWorld): { arrive: number[]; depart: numb
  * to their way, just enough to keep `gap` between them (seated and lift riders stay put).
  */
 export function samplePeople(plans: Plan[], t: number, lift: { runs: LiftRun[]; ys: number[] }, gap = 0.5): Pose[] {
-  const poses = plans.map((p) => sample(p.person, t, lift));
-  const free = (p: Pose) => p.visible && !p.riding && p.sit < 0.5 && !p.tapping;
+  return separate(plans.map((p) => sample(p.person, t, lift)), gap);
+}
+
+/** People closer than `gap` on the same floor step aside; seated, riding, tapping and talking people stay put. */
+export function separate(input: Pose[], gap = 0.5): Pose[] {
+  const poses = [...input];
+  const free = (p: Pose) => p.visible && !p.riding && p.sit < 0.5 && !p.tapping && p.act !== "talk" && p.act !== "brew";
   for (let pass = 0; pass < 4; pass++)
   for (let i = 0; i < poses.length; i++) {
     for (let j = i + 1; j < poses.length; j++) {
