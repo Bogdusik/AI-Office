@@ -28,3 +28,6 @@ Thumbs.db
 # start.ps1 / stop.ps1
 logs/
 .run/
+
+# personal notes
+run.txt
