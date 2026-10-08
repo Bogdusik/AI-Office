@@ -397,7 +397,7 @@ for (const [label, floors, expectedSpots] of [
     ];
     for (const [f, d] of [[1, 2], [2, 1]] as const)
       for (const start of starts)
-        for (let change = T + 20; change < T + 400; change += 23) {
+        for (const change of [...Array.from({ length: 24 }, (_, k) => T + 3 + k * 0.5), ...Array.from({ length: 17 }, (_, k) => T + 20 + k * 23)]) {
           const a: LifeInput = { agentId: 1, floorIndex: f, deskIndex: d, log: arrived([...start, { kind: "working", since: change }]) };
           const others = busy.filter((o) => o.agentId !== 1 && !(o.floorIndex === f && o.deskIndex === d));
           const plan = planLife([a, ...others], w, H).plans.find((p) => p.agentId === 1)!;

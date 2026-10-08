@@ -164,6 +164,23 @@ type Ctx = {
 };
 
 const nodeAt = (c: Ctx, id: string): Vec3 => c.w.walk.nodes.get(id)!.p;
+
+/** A spot whose nodes are known; otherwise the nearest node on that level (never expected, but never fatal). */
+function known(c: Ctx, at: Spot): Spot {
+  const has = (id: string) => c.w.walk.nodes.has(id);
+  if (has(at.prev) && has(at.next)) return at;
+  if (has(at.prev) || has(at.next)) {
+    const id = has(at.prev) ? at.prev : at.next;
+    return { pos: at.pos, prev: id, next: id };
+  }
+  let best = "";
+  let d = Infinity;
+  for (const n of c.w.walk.nodes.values()) {
+    const e = dist(n.p, at.pos);
+    if (e < d) [best, d] = [n.id, e];
+  }
+  return { pos: at.pos, prev: best, next: best };
+}
 const spotAt = (c: Ctx, id: string): Spot => ({ pos: nodeAt(c, id), prev: id, next: id });
 
 function path(c: Ctx, from: string, to: string): string[] {
@@ -178,14 +195,14 @@ const dist = (a: Vec3, b: Vec3) => Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a
 function standUp(c: Ctx, s: State, out: Seg[], act?: LifeAct): State {
   if (!s.seated) return s;
   const front = nodeAt(c, s.seated.front);
-  out.push(timedSeg(s.t, s.t + LIFE.stand, [s.at.pos, front], { sit: [1, 0], yaw: s.seated.yaw, act, carry: s.carry }));
+  out.push(timedSeg(s.t, s.t + LIFE.stand, [s.at.pos, front], { sit: [1, 0], yaw: s.seated.yaw, act, carry: s.carry, ids: [s.seated.seat, s.seated.front] }));
   return { t: s.t + LIFE.stand, at: spotAt(c, s.seated.front), seated: null, carry: s.carry };
 }
 
 /** Walk to a node (standing up first); from between two nodes it goes on via whichever end is shorter. */
 function walkTo(c: Ctx, s0: State, target: string, out: Seg[], hurry = false): State {
   let s = standUp(c, s0, out);
-  const { at } = s;
+  const at = known(c, s.at);
   const viaPrev = path(c, at.prev, target);
   const viaNext = path(c, at.next, target);
   const cost = (ids: string[]) => dist(at.pos, nodeAt(c, ids[0])) + lengthOf(c, ids);
@@ -208,7 +225,7 @@ function sitDown(c: Ctx, s0: State, seat: SeatRef, out: Seg[], hurry = false): S
   if (s0.seated?.seat === seat.seat) return s0;
   const s = walkTo(c, s0, seat.front, out, hurry);
   const t1 = s.t + LIFE.stand;
-  out.push(timedSeg(s.t, t1, [nodeAt(c, seat.front), nodeAt(c, seat.seat)], { sit: [0, 1], yaw: seat.yaw, seat, carry: s.carry }));
+  out.push(timedSeg(s.t, t1, [nodeAt(c, seat.front), nodeAt(c, seat.seat)], { sit: [0, 1], yaw: seat.yaw, seat, carry: s.carry, ids: [seat.front, seat.seat] }));
   return { t: t1, at: spotAt(c, seat.seat), seated: seat, carry: s.carry };
 }
 
