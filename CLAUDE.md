@@ -12,7 +12,8 @@ State lives in the database; the 3D scene only renders it. No business logic in 
 4. Clicks and panels — done
 5. Tasks with a fake executor — done
 6. Real AI via Ollama + web search — done (6a local model, 6b web tools and server room)
-7. Life animation — 7a (arrivals and departures) done, 7b (office life) ← **current**
+7. Life animation — done (7a arrivals and departures, 7b office life)
+- Release v1 — demo mode, public README, CI, MIT licence ← **current**
 8. Polish
 
 Do only the current stage. Don't jump ahead.
@@ -42,7 +43,7 @@ Floors: the reception and the director-office floor can't be deleted (409).
 - `backend/app/models/` — ORM models; enums stored as VARCHAR + CHECK
 - `backend/app/services/` — business logic; `rules.py` is pure functions, `errors.py` domain errors (→ 404/409/422 in `main.py`)
 - `backend/app/api/v1/` — thin routers under `/api/v1`
-- `backend/app/seed/` — idempotent seed (`python -m app.seed`), never overwrites existing rows
+- `backend/app/seed/` — idempotent seed (`python -m app.seed`), never overwrites existing rows and skips an agent whose desk is taken; `--demo` (`demo.py`) also fills an empty database (no profile data, no tasks — otherwise it refuses and changes nothing) with a fictional director and finished tasks (fake runs, no tokens), two tasks left queued
 - `backend/tests/` — pytest on a separate `ai_office_test` DB, recreated and migrated each run
 - `frontend/src/lib/api.ts` — API types (mirror backend schemas) + `api.*` calls; non-2xx → `ApiError`
 - `frontend/src/lib/errors.ts` — `humanize()`: backend 409/422/404 details → Russian text for the director
@@ -54,6 +55,8 @@ Floors: the reception and the director-office floor can't be deleted (409).
 - `frontend/src/scene/layout/` — **all** scene geometry as pure functions (import as `@/scene/layout`):
   `types` (Part, place), `dims` (DIM, CAMERA, FADE), `models` (primitive furniture/cars/trees as parts), `building` (floors, zones, walls, core, stairs, entrance, roof),
   `site` (roads, intersection, parking, fence, car route graph), `greenery`, `camera` (home view, wall/roof fading), `picks` (selection keys + click volumes), `walk` (walking graph, path search, obstacle footprints), `trips` (trip planner + samplers), `life` (office life planner), `moving` (lift cabin, sliding doors, barrier arms, animated figure), `assemble` (`buildScene` → parts, walls, labels, roof, routes, picks, moving props)
+- `.github/workflows/ci.yml` — backend (Postgres service, migrations, demo seed, pytest) and frontend (lint, check:layout, build)
+- `docs/screenshots/` — README images, taken on the demo profile only (never on real data)
 - `frontend/scripts/check-layout.mts` — `npm run check:layout`: parking/route/pick/walking-graph invariants of the pure layout, trip planner (exact duration, no overlaps, lift capacity, stability) + stage ribbon (no test runner)
 - `frontend/src/scene/palette.ts` — colours; one accent (`#ff7a59`) for director-related things
 - `frontend/src/components/scene/` — R3F scene from primitives (render only, reads stores); `motion/` moves trips in one `useFrame`
@@ -83,7 +86,7 @@ Floors: the reception and the director-office floor can't be deleted (409).
 
 ## Executor and agent lifecycle (stage 5)
 - `app/executor/`: `Executor` starts with the app (`lifespan`, `EXECUTOR_ENABLED`). A supervisor loop keeps one asyncio worker per agent with something to do: agents run in parallel, each on one task at a time. A Postgres advisory lock allows one executor per database; every step is a short transaction that re-checks the status under `FOR UPDATE`, so director actions always win.
-- Stage work is behind `StageWorker.run(StageInput, StageReport) -> StageOutput` (task, stage, version, profile, agent, comments, earlier stage outputs, earlier results → text, tokens, sources) plus `model_for(agent)`. `StageReport` lets a worker say `waiting()` (queued for the GPU → run status `waiting`), `started()` (request sent → `running`, `started_at` reset) and `partial(text)` (saved to `run.output` every `EXECUTOR_PROGRESS_SECONDS`, SSE `progress`). A `StageError` message is stored on the run as is (it is meant for the director). `EXECUTOR_WORKER=fake|llm` picks `FakeWorker` (placeholder, `provider = fake`) or `LlmWorker`.
+- Stage work is behind `StageWorker.run(StageInput, StageReport) -> StageOutput` (task, stage, version, profile, agent, comments, earlier stage outputs, earlier results → text, tokens, sources) plus `model_for(agent)`. `StageReport` lets a worker say `waiting()` (queued for the GPU → run status `waiting`), `started()` (request sent → `running`, `started_at` reset) and `partial(text)` (saved to `run.output` every `EXECUTOR_PROGRESS_SECONDS`, SSE `progress`). A `StageError` message is stored on the run as is (it is meant for the director). `EXECUTOR_WORKER=fake|llm` picks `FakeWorker` (placeholder typed word by word over `EXECUTOR_STAGE_SECONDS` through `partial`, `provider = fake`) or `LlmWorker`.
 - Stage list: `rules.task_stages(web_access, version)` — the single place to change it. Version 1: plan, research (web access only), draft, self_check. Version 2+ (rework): plan skipped, starts from research/draft with the director's comments and the previous result.
 - Pick order: `in_progress` (after a restart) → `changes_requested` → `queued` by position.
 - Agent `status`: `off_site` + work → `arriving` (EXECUTOR_ARRIVE_SECONDS) → `idle` → `working` (stages; one `Run` each) → after self_check a new artifact version, task → `needs_review`, next task. No work but something in review → `waiting_review` (stays). Only paused tasks left → `idle` (stays, waits for the director). Everything finished/cancelled → `leaving` (EXECUTOR_DEPART_SECONDS) → `off_site`. A new task during `leaving` brings the agent back after it has left.
