@@ -356,7 +356,7 @@ async def run_demo(session: AsyncSession, at: datetime | None = None) -> SeedRep
             task.finished_at = t + timedelta(hours=1)
         if spec.status == TaskStatus.NEEDS_REVIEW:
             agent.set_status(AgentStatus.WAITING_REVIEW, at)
-        report.created.append(f"demo task «{spec.title}» ({spec.status})")
+        report.created.append(f"demo task '{spec.title}' ({spec.status})")
 
     await session.commit()
     return report
