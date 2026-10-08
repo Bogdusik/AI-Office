@@ -38,8 +38,21 @@ export function activityCaption(agent: Pick<AgentState, "status" | "current_task
   if (agent.status !== "working") return null;
   if (task?.web_step?.kind === "fetch") return `Читает ${task.web_step.target}`;
   if (task?.web_step?.kind === "search") return "Ищет в сети";
+  if (task?.web_step?.kind === "jobs") return "Ищет вакансии";
+  if (task?.web_step?.kind === "job") return "Читает вакансию";
   if (task?.run_state === "waiting") return "Ждёт модель";
   return task?.stage ? WRITING[task.stage] : "Работает";
+}
+
+const EXCLUSION: [RegExp, string][] = [
+  [/^security clearance/, "Допуск с условием проживания (SC/DV/NPPV)"],
+  [/residency/, "Требование лет проживания в UK"],
+  [/nationality|citizenship/, "Требование гражданства"],
+];
+
+/** Russian name of a hard-filter reason sent by the backend (`app/jobs/eligibility.py`). */
+export function exclusionReason(reason: string): string {
+  return EXCLUSION.find(([re]) => re.test(reason))?.[1] ?? reason;
 }
 
 export const TASK_STATUS: Record<TaskStatus, Tag> = {
