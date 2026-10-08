@@ -245,6 +245,7 @@ export const api = {
   requestChanges: (id: number, body: string) => request<TaskDetail>("POST", `/tasks/${id}/request-changes`, { body }),
   pause: (id: number) => request<TaskDetail>("POST", `/tasks/${id}/pause`),
   resume: (id: number) => request<TaskDetail>("POST", `/tasks/${id}/resume`),
+  retry: (id: number) => request<TaskDetail>("POST", `/tasks/${id}/retry`),
   cancel: (id: number) => request<TaskDetail>("POST", `/tasks/${id}/cancel`),
   comment: (id: number, body: string) => request<Comment>("POST", `/tasks/${id}/comments`, { body }),
 
