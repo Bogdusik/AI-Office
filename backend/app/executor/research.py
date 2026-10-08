@@ -159,7 +159,8 @@ async def _fetch_page(tools: WebTools, report: StageReport, session: _Session, u
         session.pages_failed += 1
         reason = str(err) or "timeout"
         await _finish_step(report, session, step, "failed", reason)
-        return f"ERROR: could not open {url}: {reason}. Try another result."
+        closed = session.jobs.page_failed(url, err) if session.jobs else ""
+        return f"ERROR: could not open {url}: {reason}.{closed or ' Try another result.'}"
     session.sources.append((page.url, page.title))
     number = len(session.sources)
     await _finish_step(report, session, step, "done", page.title, source=number, url=page.url)

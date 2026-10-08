@@ -67,9 +67,11 @@ JOBS_RESEARCH_INSTRUCTION = (
     "limit) and `get_job` reads the full advert of a job by its number, e.g. \"J3\". You have {calls} job tool calls "
     "for this task. Vacancies that fail the director's hard eligibility filter (security clearance with a UK residency "
     "condition, years of UK residency, nationality or citizenship requirements) are removed in code and never shown to "
-    "you; never recommend a vacancy that is not in the tool results. Read the full advert with `get_job` before "
-    "recommending a job that has only a snippet. In the notes, refer to each job by its number, e.g. [J3]; the list of "
-    "jobs found and of excluded ones is added automatically."
+    "you; never recommend a vacancy that is not in the tool results. Vacancies the source or the advert page reports "
+    "as closed are removed the same way. Each job says whether it is still open; one marked 'freshness not checked' "
+    "may already be closed. Read the full advert with `get_job` before recommending a job that has only a snippet. In "
+    "the notes, refer to each job by its number, e.g. [J3]; the list of jobs found, of excluded and of closed ones is "
+    "added automatically."
 )
 
 JOBS_ONLY_RESEARCH_INSTRUCTION = (
@@ -81,8 +83,9 @@ JOBS_ONLY_RESEARCH_INSTRUCTION = (
 JOBS_DELIVERABLE_NOTE = (
     "Vacancies: use only the jobs listed under 'Jobs found' in the research notes, with their exact title, company, "
     "link, posting date and salary. Do not cite jobs with [J3] or [3] marks: the job's link is its reference. Keep [n] "
-    "only for facts from numbered web sources, if any. Do not write about excluded vacancies or the eligibility "
-    "count: that section is added automatically."
+    "only for facts from numbered web sources, if any. Never recommend a closed vacancy. Do not write about excluded "
+    "or closed vacancies, the eligibility count or which jobs' freshness was not checked: those sections are added "
+    "automatically."
 )
 
 VERDICT_ONLY_INSTRUCTION = (
@@ -90,6 +93,12 @@ VERDICT_ONLY_INSTRUCTION = (
     "eligible: {reasons}. Do not prepare an application, CV changes or a cover letter. Write only a short verdict in "
     "Markdown: not eligible, the requirement quoted from the advert, and what kind of similar role to look for instead. "
     "The fixed verdict line is added automatically."
+)
+
+CLOSED_ONLY_INSTRUCTION = (
+    "Stage: {stage}. The vacancy in the task is no longer open: {reasons}. Do not prepare an application, CV changes "
+    "or a cover letter. Write only a short note in Markdown: the vacancy is closed, how that was found out, and what "
+    "kind of similar role to look for instead. The fixed verdict line is added automatically."
 )
 
 REVISION_NOTE = (
@@ -142,7 +151,11 @@ def _stage_instruction(data: StageInput, web: WebLimits | None, job_calls: int |
         if flags:
             reasons = "; ".join(f'{f["reason"]} ("{f["phrase"]}")' for f in flags)
             return VERDICT_ONLY_INSTRUCTION.format(stage=data.stage.value.replace("_", "-"), reasons=reasons)
-        if data.jobs.get("jobs") or data.jobs.get("excluded"):
+        closed = [p for p in data.jobs.get("task_pages") or [] if p.get("freshness") == "expired"]  # type: ignore[union-attr]
+        if closed:
+            reasons = "; ".join(f"{p['note']} ({p['url']})" for p in closed)
+            return CLOSED_ONLY_INSTRUCTION.format(stage=data.stage.value.replace("_", "-"), reasons=reasons)
+        if data.jobs.get("jobs") or data.jobs.get("excluded") or data.jobs.get("expired"):
             instruction = f"{instruction}\n\n{JOBS_DELIVERABLE_NOTE}"
     return instruction
 

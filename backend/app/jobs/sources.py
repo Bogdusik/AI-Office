@@ -13,6 +13,7 @@ from urllib.parse import urlencode, urlsplit, urlunsplit, parse_qsl
 import httpx
 from pydantic import SecretStr
 
+from app.jobs.freshness import EXPIRED, GONE, OPEN, REFUSED, UNCHECKED, closed_phrase, refused
 from app.jobs.models import Job, SourceError, SourceNotConfigured, number, plain_text
 from app.web import FetchError, PageFetcher
 
@@ -49,6 +50,10 @@ class JobSource(Protocol):
         """The full advert text, or None when this source cannot give more than the snippet."""
 
 
+class SourceGone(SourceError):
+    """The source no longer has this item (HTTP 404 or 410)."""
+
+
 def _secret(value: SecretStr | None) -> str:
     return value.get_secret_value().strip() if value is not None else ""
 
@@ -66,8 +71,8 @@ async def _get_json(label: str, timeout: float, request: Any) -> Any:
         raise SourceError(f"{label} rejected the API key (HTTP {code})")
     if code == 429:
         raise SourceError(f"{label}: request limit reached (HTTP 429)")
-    if code == 404:
-        raise SourceError(f"{label}: not found (HTTP 404)")
+    if code in GONE:
+        raise SourceGone(f"{label}: not found (HTTP {code})")
     if code >= 400:
         raise SourceError(f"{label} answered with an error (HTTP {code})")
     try:
@@ -138,19 +143,30 @@ class AdzunaSource:
             salary_max=number(item.get("salary_max")),
             salary_note="estimated by Adzuna" if predicted else "",
             posted=date.fromisoformat(created[:10]) if len(created) >= 10 else None,
+            freshness_note="Adzuna's API gives no closing date",
         )
 
     async def details(self, job: Job) -> str | None:
-        """Adzuna's API has only a snippet: the advert page is read through the guarded page fetcher."""
+        """Adzuna's API has only a snippet: the advert page is read through the guarded page fetcher. The page
+        also tells whether the vacancy is still open (gone, or a "this job has expired" notice)."""
         if self._fetcher is None:
             return None
         for url in (self.DETAILS.format(id=job.source_id), job.url):
             try:
                 page = await self._fetcher.fetch(url)
-            except FetchError:
+            except FetchError as err:
+                if err.status in GONE:
+                    job.mark(EXPIRED, f"the advert page is gone (HTTP {err.status})")
+                    return None
+                job.mark(UNCHECKED, refused(err.status) if err.status in REFUSED else f"the advert page could not be read ({err})")
                 continue
+            if phrase := closed_phrase(page.text):
+                job.mark(EXPIRED, f'the advert page says "{phrase}"')
+                return None
+            job.mark(OPEN, "the advert page is up")
             if len(page.text) > len(job.description):
                 return page.text
+            return None
         return None
 
 
@@ -191,7 +207,7 @@ class ReedSource:
             return None
 
     def _job(self, item: dict[str, Any]) -> Job:
-        return Job(
+        job = Job(
             source=self.name,
             source_id=str(item.get("jobId") or ""),
             title=plain_text(item.get("jobTitle")),
@@ -202,13 +218,25 @@ class ReedSource:
             salary_min=number(item.get("minimumSalary")),
             salary_max=number(item.get("maximumSalary")),
             posted=self._date(item.get("date")),
+            freshness_note="Reed gave no closing date",
         )
+        job.dated(self._date(item.get("expirationDate")), self.label)
+        return job
 
     async def details(self, job: Job) -> str | None:
+        """The full advert; also re-checks the closing date (Reed answers an empty record for a removed job)."""
         if not self.configured or not job.source_id:
             return None
         async with self._client() as client:
-            payload = await _get_json(self.label, self.timeout, client.get(f"{self.BASE}/jobs/{job.source_id}"))
+            try:
+                payload = await _get_json(self.label, self.timeout, client.get(f"{self.BASE}/jobs/{job.source_id}"))
+            except SourceGone:
+                job.mark(EXPIRED, "Reed no longer lists it (not found)")
+                return None
+        if not payload.get("jobId"):
+            job.mark(EXPIRED, "Reed no longer lists it")
+            return None
+        job.dated(self._date(payload.get("expirationDate")), self.label)
         text = plain_text(payload.get("jobDescription"))
         if payload.get("salaryType") and not job.salary_note and (job.salary_min or job.salary_max):
             job.salary_note = str(payload["salaryType"])

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { Artifact, Run, WebStep } from "@/lib/api";
-import { TASK_STAGE } from "@/lib/labels";
+import { TASK_STAGE, freshnessNote } from "@/lib/labels";
 import { JobList } from "./JobList";
 import { Markdown } from "./Markdown";
 import { Button, Empty, formatDate } from "./ui";
@@ -146,7 +146,12 @@ function JobStep({ step: s, className }: { step: WebStep; className: string }) {
         ) : (
           <span className="break-all text-ink/80">{search ? `«${s.target}»` : s.target}</span>
         )}
-        {s.detail && <span className={failed || s.detail.startsWith("недоступна") ? "block text-ink/55" : "text-ink/50"}> · {s.detail}</span>}
+        {s.detail && (
+          <span className={failed || s.detail.startsWith("недоступна") || s.detail.startsWith("закрыта") ? "block text-ink/55" : "text-ink/50"}>
+            {" "}
+            · {s.detail.startsWith("закрыта: ") ? `закрыта: ${freshnessNote(s.detail.slice(9))}` : s.detail}
+          </span>
+        )}
       </span>
       {running && <span className="ml-auto shrink-0 animate-pulse text-[#2a9fd6]">…</span>}
     </li>
