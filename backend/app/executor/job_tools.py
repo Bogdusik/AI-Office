@@ -18,8 +18,7 @@ from typing import Any, Protocol
 
 from app.executor.prompt import escape_tags
 from app.executor.worker import ActivityStep
-from app.jobs import Exclusion, Job, JobSearch, SourceError, check, summary
-from app.jobs.search import dedupe_key
+from app.jobs import Exclusion, Job, JobSearch, absorb, check, same_vacancy, summary
 from app.web.fetch import cut
 
 JOB_TOOLS: list[dict[str, Any]] = [
@@ -94,7 +93,6 @@ class JobSession:
     calls_left: int
     entries: dict[str, _Entry] = field(default_factory=dict)
     """Every vacancy seen, by ref: J1… shown to the model, X1… excluded before the model could see them."""
-    by_key: dict[tuple[str, str, str], str] = field(default_factory=dict)
     pages: list[dict[str, Any]] = field(default_factory=list)
     """Web pages that failed the filter: {url, title, exclusions}."""
     searches: list[dict[str, Any]] = field(default_factory=list)
@@ -109,30 +107,37 @@ class JobSession:
         session.task_flags = [{**e, "where": "task"} for e in _exclusions(check(text, director=True))]
         return session
 
-    def add(self, job: Job, exclusions: list[Exclusion]) -> tuple[_Entry, bool]:
-        key = dedupe_key(job)
-        if key in self.by_key:
-            return self.entries[self.by_key[key]], False
-        prefix = "X" if exclusions else "J"
-        ref = f"{prefix}{sum(1 for r in self.entries if r.startswith(prefix)) + 1}"
-        entry = _Entry(ref, job, exclusions)
-        self.entries[ref] = entry
-        self.by_key[key] = ref
-        return entry, True
+    def add(self, job: Job) -> tuple[_Entry, str]:
+        """Records a listing: a new vacancy, or a duplicate of one seen before (folded in and re-checked).
+        Returns the entry and what happened: `new`, `seen`, or `withdrawn` (shown before, excluded now)."""
+        entry = next((e for e in self.entries.values() if same_vacancy(e.job, job)), None)
+        if entry is None:
+            exclusions = check(job.checked_text)
+            prefix = "X" if exclusions else "J"
+            ref = f"{prefix}{sum(1 for r in self.entries if r.startswith(prefix)) + 1}"
+            entry = _Entry(ref, job, exclusions)
+            self.entries[ref] = entry
+            return entry, "new"
+        absorb(entry.job, job)
+        if entry.exclusions:
+            return entry, "seen"
+        entry.exclusions = check(entry.job.checked_text)
+        return entry, "withdrawn" if entry.exclusions else "seen"
 
     @property
     def excluded(self) -> list[_Entry]:
         return [e for e in self.entries.values() if e.exclusions]
 
     def page_checked(self, urls: tuple[str, str], title: str, text: str) -> str:
-        """A web page read during research (asked-for and final URL): if it fails the filter, it is excluded like a
-        vacancy, and when its link is in the task, the task's vacancy is not eligible."""
+        """A web page read during research (asked-for and final URL). A page whose link is in the task is the
+        vacancy under review: failing the filter makes it not eligible. Any other page (a guide, an article) only
+        gets a note for the model; vacancies to recommend come from the job tools, never from web pages."""
         found = check(text)
         if not found:
             return ""
         url = urls[1]
-        self.pages.append({"url": url, "title": title, "exclusions": _exclusions(found)})
         if any(u and u in self.task_text for u in urls):
+            self.pages.append({"url": url, "title": title, "exclusions": _exclusions(found)})
             self.task_flags += [{**e, "where": url} for e in _exclusions(found)]
         reasons = "; ".join(f'{e.reason} ("{e.phrase}")' for e in found)
         return f"\n\nELIGIBILITY FILTER: this page asks for {reasons}. If it is a vacancy, it is not eligible: do not recommend it and do not prepare an application for it."
@@ -198,13 +203,15 @@ async def search_jobs(tools: JobTools, steps: StepLog, session: JobSession, args
 
     session.failures.update(outcome.failures)
     shown: list[_Entry] = []
+    withdrawn: list[_Entry] = []
     excluded = 0
     for job in outcome.jobs:
-        exclusions = check(f"{job.title}\n{job.description}")
-        entry, new = session.add(job, exclusions)
-        if entry.exclusions:
-            excluded += int(new)
-        else:
+        entry, what = session.add(job)
+        if what == "withdrawn":
+            withdrawn.append(entry)
+        elif entry.exclusions:
+            excluded += int(what == "new")
+        elif entry not in shown:
             shown.append(entry)
     found = outcome.found
     session.searches.append(
@@ -219,6 +226,10 @@ async def search_jobs(tools: JobTools, steps: StepLog, session: JobSession, args
         f"Excluded by the eligibility filter: {excluded} (not shown, never recommend them).",
     ]
     lines += [f"{label}: not searched — {why}" for label, why in outcome.failures.items()]
+    lines += [
+        f"Withdrawn: {e.ref} is another listing of an excluded vacancy ({e.exclusions[0].reason}). Do not recommend it."
+        for e in withdrawn
+    ]
     for entry in shown:
         snippet = " ".join(entry.job.description.split())[:300]
         lines.append(_line(entry) + (f"\n    Snippet: {escape_tags(snippet)}" if snippet else ""))
@@ -247,7 +258,8 @@ async def get_job(tools: JobTools, steps: StepLog, session: JobSession, args: Ma
             text, error = None, f"no answer within {tools.tool_timeout:g} s"
         if text:
             job.description, job.full = text, True
-    found = check(f"{job.title}\n{job.description}")
+            job.texts.append(text)
+    found = check(job.checked_text)
     if found:
         entry.exclusions = found
         reasons = "; ".join(f'{e.reason} ("{e.phrase}")' for e in found)
