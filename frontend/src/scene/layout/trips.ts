@@ -1,11 +1,16 @@
 /**
- * Trip planner: where every arriving or leaving agent (car and person) is at any moment.
+ * Trip planner: where every arriving, leaving or returning agent (car and person) is at any moment.
  *
  * Pure functions of the trips in `/state` (kind, start time, desk) and the layout. Trips are planned one by one
  * in order of their start; each plan depends only on earlier trips (gate, card reader and lift reservations
  * are only ever appended), so a new trip never moves anyone already on the way, and a reload replans the
  * same picture. Each trip lasts exactly its duration: one pace factor scales all speeds, an arriving car can
  * set off later, and the final stretch (walk to the desk, drive to the map edge) absorbs the rest.
+ *
+ * A departing car never leaves its spot before `turnBack`. A return (a task came before that) starts where the
+ * departure has got to and walks back to the desk; the departure is cut there and drops what it had reserved
+ * for later (barrier, aisle, doors), so no barrier opens for a car that stays. An arrival that continues a
+ * departure (`origin`, the car went to the map edge) comes back from the edge it left by.
  */
 import { type BuildingLayout, coreLayout } from "./building";
 import { DIM } from "./dims";
@@ -14,11 +19,22 @@ import { type Vec3, rectCenter } from "./types";
 import type { LeaveFrom } from "./life";
 import { WALK, type WalkGraph, findPath } from "./walk";
 
-export type TripKind = "arrive" | "depart";
+export type TripKind = "arrive" | "depart" | "return";
 /** `start` in seconds on the server clock. */
 /** `from`: where a leaving agent is when the departure starts (office life); absent → seated at the desk. */
-export type TripInput = { agentId: number; kind: TripKind; start: number; floorIndex: number; deskIndex: number; spot: number; from?: LeaveFrom | null };
-export type Durations = { arrive: number; depart: number };
+/** `origin`: start of the departure this trip continues (a return turned back from it, an arrival came back from the edge). */
+export type TripInput = {
+  agentId: number;
+  kind: TripKind;
+  start: number;
+  floorIndex: number;
+  deskIndex: number;
+  spot: number;
+  from?: LeaveFrom | null;
+  origin?: number | null;
+};
+/** `turnBack`: a departing car stays in its spot at least this long; a return lasts (start − origin) + `returnExtra`. */
+export type Durations = { arrive: number; depart: number; turnBack?: number; returnExtra?: number };
 export type TripWorld = { building: BuildingLayout; site: SiteLayout; routes: Routes; walk: WalkGraph };
 
 /**
@@ -56,7 +72,8 @@ export type SeatRef = { seat: string; front: string; yaw: number };
 /** `squeeze` < 1: the final stretch had to go faster than the pace to end on time (busy gate, reader or lift). */
 export type Plan = { trip: TripInput; end: number; car: Seg[]; person: Seg[]; pace: number; delay: number; squeeze: number };
 
-export type Interval = { from: number; to: number };
+/** `owner`: the trip that reserved it (`agentId@start`), so a departure cut by a return can drop its future. */
+export type Interval = { from: number; to: number; owner?: string };
 export type LiftStop = { floor: number; arrive: number; close: number };
 export type LiftRun = { startAt: number; startFloor: number; stops: LiftStop[]; riders: number };
 /** A stretch of the parking aisle (x range) a leaving car needs for a while. */
@@ -437,7 +454,10 @@ function pathOf(w: TripWorld, from: string, to: string): Vec3[] {
   return p;
 }
 
-type Sim = { car: Seg[]; person: Seg[]; state: State; end: number; tailFrom: number };
+/** `ready`: a departure's person is in the car (for the turn-back time). */
+type Sim = { car: Seg[]; person: Seg[]; state: State; end: number; tailFrom: number; ready?: number };
+
+const ownerOf = (trip: TripInput) => `${trip.agentId}@${trip.start}`;
 
 /** Lift or stairs between floors, whichever gets there first; returns the segments and the time at `toId`. */
 function changeFloors(w: TripWorld, st: State, pace: number, t: number, fromFloor: number, toFloor: number, toId: string, person: Seg[]): number {
@@ -467,11 +487,61 @@ function changeFloors(w: TripWorld, st: State, pace: number, t: number, fromFloo
   return afterLift.t1;
 }
 
+/** At the desk: walk to its approach (changing floors when needed) and sit down. */
+function toDesk(w: TripWorld, st: State, trip: TripInput, pace: number, t: number, fromId: string, floor: number, person: Seg[]): { end: number; tailFrom: number } {
+  const target = WALK.approach(trip.floorIndex, trip.deskIndex);
+  const resources = person.length;
+  let atDesk: number;
+  if (floor === trip.floorIndex) {
+    const walk = walkSeg(t, pathOf(w, fromId, target), pace);
+    person.push(walk);
+    atDesk = walk.t1;
+  } else {
+    let atLift = t;
+    if (fromId !== WALK.lift(floor)) {
+      const toLift = walkSeg(t, pathOf(w, fromId, WALK.lift(floor)), pace);
+      person.push(toLift);
+      atLift = toLift.t1;
+    }
+    atDesk = changeFloors(w, st, pace, atLift, floor, trip.floorIndex, target, person);
+  }
+  const lastResource = person.slice(resources).findLast((s) => s.ride)?.t1 ?? t;
+  const sit = timedSeg(atDesk, atDesk + M.sit * pace, [nodePos(w, target), nodePos(w, WALK.seat(trip.floorIndex, trip.deskIndex))], { yaw: 0, sit: [0, 1] });
+  person.push(sit);
+  return { end: sit.t1, tailFrom: lastResource };
+}
+
+/** From outside: walk to the card reader (queueing a step behind whoever is tapping), tap, go in, up to the desk. */
+function enterAndSit(w: TripWorld, st: State, trip: TripInput, pace: number, t: number, fromId: string, person: Seg[]): { end: number; tailFrom: number } {
+  const toReader = walkSeg(t, pathOf(w, fromId, WALK.reader), pace);
+  const reader = nodePos(w, WALK.reader);
+  const tapLen = M.tap * pace;
+  const tapAt = fitSlot(st.reader, toReader.t1, tapLen);
+  if (tapAt > toReader.t1 + EPS) {
+    const ahead = st.reader.filter((r) => r.to > toReader.t1 && r.from < tapAt).length;
+    const back = Math.min(M.queueGap * ahead, cumulative(toReader.pts).at(-1)!);
+    const [before, last] = splitAt(toReader.pts, cumulative(toReader.pts).at(-1)! - back);
+    const walkIn = walkSeg(t, before, pace);
+    const stepT = (back / M.walk) * pace;
+    person.push(walkIn, holdSeg(walkIn.t1, tapAt - stepT, before.at(-1)!, endYaw(walkIn)), timedSeg(tapAt - stepT, tapAt, last));
+  } else {
+    person.push(toReader);
+  }
+  st.reader.push({ from: tapAt, to: tapAt + tapLen, owner: ownerOf(trip) });
+  person.push(holdSeg(tapAt, tapAt + tapLen, reader, 0, { tap: true }));
+  const inside0 = walkSeg(tapAt + tapLen, pathOf(w, WALK.reader, WALK.lift(0)), pace);
+  person.push(inside0);
+  st.door.push({ from: tapAt + tapLen - M.doorOpen, to: timeNear(inside0, nodePos(w, WALK.insideDoor)) + 0.6, owner: ownerOf(trip) });
+  const desk = toDesk(w, st, trip, pace, inside0.t1, WALK.lift(0), 0, person);
+  return { end: desk.end, tailFrom: Math.max(desk.tailFrom, inside0.t1) };
+}
+
 function arriveSim(w: TripWorld, base: State, trip: TripInput, pace: number, delay: number): Sim {
   const st = cloneState(base);
   const { site, routes } = w;
   const spot = site.spots[trip.spot];
-  const edge = edgesFor(trip.agentId).from;
+  // Coming straight back from a departure: from the map edge the car drove off to.
+  const edge = trip.origin != null ? edgesFor(trip.agentId).to : edgesFor(trip.agentId).from;
   const road = M.road / pace;
   const lot = M.lot / pace;
 
@@ -504,35 +574,142 @@ function arriveSim(w: TripWorld, base: State, trip: TripInput, pace: number, del
   person.push(holdSeg(trip.start, c3.t1, doorPoint, spot.yaw, { hidden: true }));
   const out = timedSeg(c3.t1, c3.t1 + M.getOut * pace, [doorPoint, side]);
   person.push(out);
-  const toReader = walkSeg(out.t1, pathOf(w, WALK.carSide(trip.spot), WALK.reader), pace);
-  const reader = nodePos(w, WALK.reader);
-  const tapLen = M.tap * pace;
-  const tapAt = fitSlot(st.reader, toReader.t1, tapLen);
-  if (tapAt > toReader.t1 + EPS) {
-    const ahead = st.reader.filter((r) => r.to > toReader.t1 && r.from < tapAt).length;
-    const back = Math.min(M.queueGap * ahead, cumulative(toReader.pts).at(-1)!);
-    const [before, last] = splitAt(toReader.pts, cumulative(toReader.pts).at(-1)! - back);
-    const walkIn = walkSeg(out.t1, before, pace);
-    const stepT = (back / M.walk) * pace;
-    person.push(walkIn, holdSeg(walkIn.t1, tapAt - stepT, before.at(-1)!, endYaw(walkIn)), timedSeg(tapAt - stepT, tapAt, last));
-  } else {
-    person.push(toReader);
-  }
-  st.reader.push({ from: tapAt, to: tapAt + tapLen });
-  person.push(holdSeg(tapAt, tapAt + tapLen, reader, 0, { tap: true }));
-  const inside0 = walkSeg(tapAt + tapLen, pathOf(w, WALK.reader, WALK.lift(0)), pace);
-  person.push(inside0);
-  st.door.push({ from: tapAt + tapLen - M.doorOpen, to: timeNear(inside0, nodePos(w, WALK.insideDoor)) + 0.6 });
+  const desk = enterAndSit(w, st, trip, pace, out.t1, WALK.carSide(trip.spot), person);
+  return { car, person, state: st, end: desk.end, tailFrom: desk.tailFrom };
+}
 
-  const resources = person.length;
-  const target = WALK.approach(trip.floorIndex, trip.deskIndex);
-  const atDesk = changeFloors(w, st, pace, inside0.t1, 0, trip.floorIndex, target, person);
-  const lastResource = person.slice(resources).findLast((s) => s.ride)?.t1 ?? inside0.t1;
-  const seat = nodePos(w, WALK.seat(trip.floorIndex, trip.deskIndex));
-  const app = nodePos(w, target);
-  const sit = timedSeg(atDesk, atDesk + M.sit * pace, [app, seat], { yaw: 0, sit: [0, 1] });
-  person.push(sit);
-  return { car, person, state: st, end: sit.t1, tailFrom: lastResource };
+/** Walking graph node at a point (paths are made of node positions), else the nearest node on that level. */
+function nodeAt(w: TripWorld, p: Vec3): string {
+  let best = "";
+  let d = Infinity;
+  for (const n of w.walk.nodes.values()) {
+    if (Math.abs(n.p[1] - p[1]) > 0.5) continue;
+    const e = dist2(n.p, p);
+    if (e < d) [best, d] = [n.id, e];
+  }
+  return best;
+}
+
+const pathLength = (w: TripWorld, from: string, to: string) => cumulative(pathOf(w, from, to)).at(-1)!;
+
+/** Seconds of a segment from `t` on (the rest of a move that is finished before turning back). */
+function restOf(seg: Seg, t: number): Seg {
+  if (t <= seg.t0) return seg;
+  if (seg.pts.length === 1) return { ...seg, t0: t, times: [t] };
+  let i = 1;
+  while (i < seg.times.length - 1 && seg.times[i] <= t) i++;
+  const p = posIn(seg, t);
+  const k = seg.sit ? (t - seg.t0) / (seg.t1 - seg.t0 || 1) : 0;
+  const sit: [number, number] | undefined = seg.sit ? [lerp(seg.sit[0], seg.sit[1], k), seg.sit[1]] : undefined;
+  return { ...seg, t0: t, pts: [p, ...seg.pts.slice(i)], times: [t, ...seg.times.slice(i)], ...(sit ? { sit } : {}) };
+}
+
+/**
+ * The first moves of a return: where the departure has got to at `t` and how the agent gets onto the walking
+ * graph from there. A move that can't stop half-way (standing up, stepping into or riding the lift, getting
+ * into the car) is finished first; someone walking turns back to the node behind them, or goes on to the next
+ * one if that is the shorter way to the desk; someone in the car gets out.
+ */
+function turnAround(w: TripWorld, trip: TripInput, segs: Seg[], runs: LiftRun[], pace: number, person: Seg[]): { t: number; id: string; cabin?: { floor: number; pos: Vec3 } } {
+  const t = trip.start;
+  const carSide = WALK.carSide(trip.spot);
+  const getOut = (at: number, doorPoint: Vec3) => {
+    const out = timedSeg(at, at + M.getOut * pace, [doorPoint, nodePos(w, carSide)]);
+    person.push(out);
+    return { t: out.t1, id: carSide };
+  };
+  let k = segs.findIndex((s) => t < s.t1);
+  if (k < 0) k = segs.length - 1;
+  const seg = segs[k];
+  if (seg.hidden) return getOut(t, seg.pts[0]);
+  if (segs[k + 1]?.hidden) {
+    person.push(restOf(seg, t));
+    return getOut(seg.t1, seg.pts.at(-1)!);
+  }
+  const ride = seg.ride ? k : segs[k + 1]?.ride ? k + 1 : -1;
+  if (ride >= 0 && segs[ride + 1]) {
+    // Stepping in or in the cabin while its doors are still open: steps back out.
+    const from = nodeAt(w, segs[ride - 1].pts[0]);
+    const fromPos = nodePos(w, from);
+    const board = segs[ride].t0 - L.step;
+    const floorA = w.walk.nodes.get(from)?.floor ?? 0;
+    const boarding = runs.flatMap((r) => r.stops).find((s) => s.floor === floorA && s.arrive - EPS <= board && board <= s.close + EPS);
+    if (boarding && t < boarding.close - EPS) {
+      const here = posIn(seg, t);
+      const out = timedSeg(t, t + L.step, [[here[0], fromPos[1], here[2]], [DIM.wall / 2, fromPos[1], fromPos[2]], fromPos]);
+      person.push(out);
+      return { t: out.t1, id: from };
+    }
+    // Doors closed: stays in the cabin to its stop, then rides straight back up.
+    person.push(restOf(seg, t), ...segs.slice(k + 1, ride + 1));
+    const stop = nodeAt(w, segs[ride + 1].pts.at(-1)!);
+    return { t: segs[ride].t1, id: stop, cabin: { floor: w.walk.nodes.get(stop)?.floor ?? 0, pos: segs[ride].pts[0] } };
+  }
+  const chainEnd = seg.sit ? k : -1;
+  if (chainEnd >= 0 || (k > 0 && segs[k - 1].ride)) {
+    const end = Math.max(chainEnd, k);
+    person.push(restOf(seg, t), ...segs.slice(k + 1, end + 1));
+    return { t: segs[end].t1, id: nodeAt(w, segs[end].pts.at(-1)!) };
+  }
+  const here = posIn(seg, t);
+  if (seg.pts.length === 1) {
+    const id = nodeAt(w, here);
+    if (dist3(here, nodePos(w, id)) < 1e-3) return { t, id };
+    const step = walkSeg(t, [here, nodePos(w, id)], pace);
+    person.push(step);
+    return { t: step.t1, id };
+  }
+  let i = 1;
+  while (i < seg.times.length - 1 && seg.times[i] <= t) i++;
+  const desk = WALK.approach(trip.floorIndex, trip.deskIndex);
+  const cost = (id: string) => {
+    const outside = w.walk.nodes.get(id)?.floor === null;
+    const rest = outside ? pathLength(w, id, WALK.reader) + pathLength(w, WALK.reader, desk) : pathLength(w, id, desk);
+    return dist3(here, nodePos(w, id)) + rest;
+  };
+  const [back, ahead] = [nodeAt(w, seg.pts[i - 1]), nodeAt(w, seg.pts[i])];
+  const id = cost(ahead) < cost(back) ? ahead : back;
+  const step = walkSeg(t, [here, nodePos(w, id)], pace);
+  if (dist3(here, nodePos(w, id)) > 1e-3) person.push(step);
+  return { t: Math.max(t, step.t1), id };
+}
+
+/** Back to the desk from wherever the departure `origin` has got to (the car has not left its spot yet). */
+function returnSim(w: TripWorld, base: State, trip: TripInput, origin: Plan | undefined, pace: number, delay: number): Sim {
+  const st = cloneState(base);
+  const spot = w.site.spots[trip.spot];
+  const since = trip.origin ?? trip.start;
+  const car: Seg[] = [holdSeg(since, trip.start, spot.center, spot.yaw, { hidden: true }), holdSeg(trip.start, Infinity, spot.center, spot.yaw)];
+  const person: Seg[] = [holdSeg(since, trip.start, spot.center, 0, { hidden: true })];
+  if (!origin) {
+    // The departure is not known (never expected): already back at the desk.
+    const seat = nodePos(w, WALK.seat(trip.floorIndex, trip.deskIndex));
+    person.push(holdSeg(trip.start, trip.start + 0.5, seat, 0, { sit: [1, 1] }));
+    return { car, person, state: st, end: trip.start + 0.5, tailFrom: trip.start };
+  }
+  const at = turnAround(w, trip, origin.person, st.lift, pace, person);
+  let t = at.t;
+  if (at.cabin && at.cabin.floor !== trip.floorIndex) {
+    const ys = liftFloors(w.building);
+    const ride = requestLift(st.lift, ys, at.cabin.floor, trip.floorIndex, t);
+    st.lift = ride.runs;
+    const toLift = nodePos(w, WALK.lift(trip.floorIndex));
+    const [x, , z] = at.cabin.pos;
+    person.push(holdSeg(t, ride.out, at.cabin.pos, yawOf(1, 0), { ride: true }));
+    const out = timedSeg(ride.out, ride.out + L.step, [[x, toLift[1], z], [DIM.wall / 2, toLift[1], toLift[2]], toLift]);
+    person.push(out);
+    at.id = WALK.lift(trip.floorIndex);
+    t = out.t1;
+  } else if (at.cabin) {
+    const stop = nodePos(w, at.id);
+    const out = timedSeg(t, t + L.step, [[at.cabin.pos[0], stop[1], at.cabin.pos[2]], [DIM.wall / 2, stop[1], stop[2]], stop]);
+    person.push(out);
+    t = out.t1;
+  }
+  t += delay;
+  const floor = w.walk.nodes.get(at.id)?.floor ?? null;
+  const desk = floor === null ? enterAndSit(w, st, trip, pace, t, at.id, person) : toDesk(w, st, trip, pace, t, at.id, floor, person);
+  return { car, person, state: st, end: desk.end, tailFrom: Math.max(desk.tailFrom, t) };
 }
 
 /** First steps of a departure: stand up from the desk (or the sofa), or step from wherever office life left them. */
@@ -558,8 +735,9 @@ function leaveStart(w: TripWorld, trip: TripInput, pace: number, person: Seg[]):
   return { t: step.t1, id, floor: floorOf(id) };
 }
 
-function departSim(w: TripWorld, base: State, trip: TripInput, pace: number, delay: number): Sim {
+function departSim(w: TripWorld, base: State, trip: TripInput, pace: number, delay: number, turnBack = 0): Sim {
   const st = cloneState(base);
+  const owner = ownerOf(trip);
   const { site, routes } = w;
   const spot = site.spots[trip.spot];
   const edge = edgesFor(trip.agentId).to;
@@ -579,7 +757,7 @@ function departSim(w: TripWorld, base: State, trip: TripInput, pace: number, del
   const toCar = walkSeg(down, pathOf(w, WALK.lift(0), WALK.carSide(trip.spot)), pace);
   person.push(toCar);
   const doorAt = timeNear(toCar, nodePos(w, WALK.insideDoor));
-  st.door.push({ from: doorAt - 1.2, to: timeNear(toCar, nodePos(w, WALK.outsideDoor)) + 0.4 });
+  st.door.push({ from: doorAt - 1.2, to: timeNear(toCar, nodePos(w, WALK.outsideDoor)) + 0.4, owner });
   const side = nodePos(w, WALK.carSide(trip.spot));
   const doorPoint: Vec3 = [lerp(spot.center[0], side[0], 0.7), 0, spot.center[2]];
   const getIn = timedSeg(toCar.t1, toCar.t1 + M.getOut * pace, [side, doorPoint]);
@@ -595,9 +773,9 @@ function departSim(w: TripWorld, base: State, trip: TripInput, pace: number, del
   const lot = M.lot / pace;
   const road = M.road / pace;
   // Wait in the spot until the aisle in front is clear (no car reversing nearby or driving past) and the
-  // exit barrier will be free when we get there.
+  // exit barrier will be free when we get there. Never before `turnBack`: until then a task turns the agent back.
   const sweep = { x0: sx - 1.6, x1: sx + M.turn + 2.4 };
-  let leave = getIn.t1 + delay;
+  let leave = Math.max(getIn.t1, trip.start + turnBack) + delay;
   let r = moveSeg(leave, back, M.reverse / pace, "drive", { reverse: true });
   let g = moveSeg(r.t1, toGate, lot, "drive");
   let zones: Zone[] = [];
@@ -605,8 +783,8 @@ function departSim(w: TripWorld, base: State, trip: TripInput, pace: number, del
     r = moveSeg(leave, back, M.reverse / pace, "drive", { reverse: true });
     g = moveSeg(r.t1, toGate, lot, "drive");
     zones = [
-      { ...sweep, from: leave, to: r.t1, drive: false },
-      { x0: site.exitLaneX - 2, x1: sweep.x1, from: r.t1, to: g.t1, drive: true },
+      { ...sweep, from: leave, to: r.t1, drive: false, owner },
+      { x0: site.exitLaneX - 2, x1: sweep.x1, from: r.t1, to: g.t1, drive: true, owner },
     ];
     // Cars driving out one after another don't clash; a reversing car clashes with anything nearby.
     const clash = st.aisle.find((z) => zones.some((m) => !(m.drive && z.drive) && m.x0 < z.x1 && z.x0 < m.x1 && m.from < z.to && z.from < m.to));
@@ -627,8 +805,8 @@ function departSim(w: TripWorld, base: State, trip: TripInput, pace: number, del
   const a = moveSeg(g.t1 + M.gateRaise * pace, speedUp, road, "in");
   const c = moveSeg(a.t1, cruise, road, "linear");
   car.push(a, c, holdSeg(c.t1, Infinity, cruise.at(-1)!, endYaw(c), { hidden: true }));
-  st.exit.push({ from: g.t1, to: a.t0 + M.gateClear });
-  return { car, person, state: st, end: c.t1, tailFrom: a.t0 };
+  st.exit.push({ from: g.t1, to: a.t0 + M.gateClear, owner });
+  return { car, person, state: st, end: c.t1, tailFrom: a.t0, ready: getIn.t1 };
 }
 
 /** First time a car track is past z (driving towards +z), e.g. clear of the exit barrier. */
@@ -640,10 +818,18 @@ function passTime(segs: Seg[], z: number): number {
   return -Infinity;
 }
 
-/** Pace and (for arrivals) a later start so the trip ends exactly at start + duration. */
-function fitTrip(w: TripWorld, state: State, trip: TripInput, duration: number): Plan & { state: State } {
-  const sim = (pace: number, delay: number) => (trip.kind === "arrive" ? arriveSim(w, state, trip, pace, delay) : departSim(w, state, trip, pace, delay));
+/**
+ * Pace and (arrivals) a later start, (returns) a pause where the agent turns, or (departures) a longer wait in
+ * the spot, so the trip ends exactly at start + duration.
+ */
+function fitTrip(w: TripWorld, state: State, trip: TripInput, d: Durations, origin?: Plan): Plan & { state: State } {
+  const turnBack = d.turnBack ?? 0;
+  const sim = (pace: number, delay: number) =>
+    trip.kind === "arrive" ? arriveSim(w, state, trip, pace, delay) : trip.kind === "return" ? returnSim(w, state, trip, origin, pace, delay) : departSim(w, state, trip, pace, delay, turnBack);
+  const duration = durationOf(d, trip);
   const target = trip.start + duration;
+  const walking = trip.kind !== "depart";
+  if (trip.kind === "return") return fitReturn(trip, target, sim);
   // Queues make the end time jump with the pace, so try a grid and keep the run whose final stretch
   // needs the least stretching or squeezing. Early even at the slowest pace: an arriving car sets off later,
   // a leaving one waits in its spot a little longer.
@@ -654,10 +840,12 @@ function fitTrip(w: TripWorld, state: State, trip: TripInput, duration: number):
   // Prefer the natural pace a little, so an early trip doesn't dawdle and hold the gate or lift for later ones.
   // A leaving car may drive off to the map edge up to `STRETCH` times slower than usual (mostly off screen).
   const STRETCH = 2.5;
+  // A departure walks a little faster rather than reach the car after `turnBack` (a task then still turns them back).
+  const late = (r: Sim) => (trip.kind === "depart" && turnBack > 0 && r.ready !== undefined ? Math.max(0, r.ready - (trip.start + turnBack)) : 0);
   const badness = (r: Sim, p: number) => {
     const sq = Math.max(1e-3, Math.min(1e3, squeezeOf(r)));
-    const off = trip.kind === "depart" && sq > 1 ? Math.max(0, Math.log(sq / STRETCH)) : Math.abs(Math.log(sq)) * (sq < 1 ? 2 : 1);
-    return off + 0.5 * Math.abs(Math.log(p));
+    const off = !walking && sq > 1 ? Math.max(0, Math.log(sq / STRETCH)) : Math.abs(Math.log(sq)) * (sq < 1 ? 2 : 1);
+    return off + 0.5 * Math.abs(Math.log(p)) + 0.2 * late(r);
   };
   let pace = 1;
   let delay = 0;
@@ -666,10 +854,10 @@ function fitTrip(w: TripWorld, state: State, trip: TripInput, duration: number):
     const bad = badness(sim(p, 0), p);
     if (bad < bestBad - 1e-9) [bestBad, pace] = [bad, p];
   }
-  if (squeezeOf(sim(pace, 0)) > (trip.kind === "depart" ? STRETCH : 1.15)) {
-    for (let d = 0.5; d < duration; d += 0.5) {
-      const bad = badness(sim(pace, d), pace);
-      if (bad < bestBad - 1e-9) [bestBad, delay] = [bad, d];
+  if (squeezeOf(sim(pace, 0)) > (walking ? 1.15 : STRETCH)) {
+    for (let x = 0.5; x < duration; x += 0.5) {
+      const bad = badness(sim(pace, x), pace);
+      if (bad < bestBad - 1e-9) [bestBad, delay] = [bad, x];
     }
   }
 
@@ -677,17 +865,63 @@ function fitTrip(w: TripWorld, state: State, trip: TripInput, duration: number):
   const tailFrom = Math.min(best.tailFrom, target);
   // The final stretch (walk to the desk, drive to the map edge) takes up what is left, so the end is exact.
   const fit = (segs: Seg[]) => [...retime(segs.filter((x) => Number.isFinite(x.t1)), tailFrom, target), ...segs.filter((x) => !Number.isFinite(x.t1))];
-  const person = trip.kind === "arrive" ? fit(best.person) : best.person;
-  const car = trip.kind === "depart" ? fit(best.car) : best.car;
+  const person = walking ? fit(best.person) : best.person;
+  const car = walking ? best.car : fit(best.car);
   const squeeze = squeezeOf(best);
   const next = { ...best.state, exit: [...best.state.exit] };
   if (trip.kind === "depart") {
     // The final drive was retimed: keep the exit barrier up until this car is really through.
     const through = passTime(car, w.site.barrierZ + 4.5);
     const last = next.exit.at(-1)!;
-    next.exit[next.exit.length - 1] = { from: last.from, to: Math.max(last.to, through + 0.3) };
+    next.exit[next.exit.length - 1] = { ...last, to: Math.max(last.to, through + 0.3) };
   }
   return { trip, end: target, car, person, pace, delay, squeeze, state: next };
+}
+
+/** A return walks at most this much slower than usual to use up spare time (the rest is spent seated at the desk). */
+const RETURN_CALM = 1.15;
+
+/**
+ * A return walks back at the natural pace (a little calmer when there is time, faster when it would be late)
+ * and, if back early, sits at the desk until the trip ends: the agent is at the desk when work starts.
+ */
+function fitReturn(trip: TripInput, target: number, sim: (pace: number, delay: number) => Sim): Plan & { state: State } {
+  let pace = 1;
+  let best = sim(pace, 0);
+  for (let p = 1 - 0.025; best.end > target + EPS && p >= M.paceMin - 1e-9; p -= 0.025) [pace, best] = [p, sim(p, 0)];
+  for (let p = 1 + 0.025; best.end < target - EPS && p <= RETURN_CALM + 1e-9; p += 0.025) {
+    const calmer = sim(p, 0);
+    if (calmer.end > target + EPS) break;
+    [pace, best] = [p, calmer];
+  }
+  const seated = best.person.at(-1)!;
+  const tailFrom = Math.min(best.tailFrom, target);
+  const person =
+    best.end <= target
+      ? [...best.person, holdSeg(best.end, target, seated.pts.at(-1)!, seated.yaw ?? 0, { sit: [1, 1] })]
+      : retime(best.person, tailFrom, target);
+  const squeeze = best.end <= target ? 1 : best.end - tailFrom > EPS ? (target - tailFrom) / (best.end - tailFrom) : 0;
+  return { trip, end: target, car: best.car, person, pace, delay: 0, squeeze, state: best.state };
+}
+
+/** The part of a timeline before `t`; after it the actor is gone (a departure cut by a return). */
+function cutAt(segs: Seg[], t: number): Seg[] {
+  const kept = segs.filter((s) => s.t0 < t).map((s) => (s.t1 <= t ? s : { ...s, t1: t, ...clip(s, t) }));
+  const last = kept.at(-1);
+  return last ? [...kept, holdSeg(t, Infinity, posIn(last, t), 0, { hidden: true })] : segs;
+}
+
+function clip(seg: Seg, t: number): Pick<Seg, "pts" | "times"> {
+  if (seg.pts.length === 1) return { pts: seg.pts, times: seg.times };
+  let i = 1;
+  while (i < seg.times.length - 1 && seg.times[i] < t) i++;
+  return { pts: [...seg.pts.slice(0, i), posIn(seg, t)], times: [...seg.times.slice(0, i), t] };
+}
+
+/** Drops what a cut departure had reserved from `t` on (barrier, aisle, doors, reader). */
+function dropFuture(s: State, owner: string, t: number): State {
+  const keep = <T extends Interval>(xs: T[]) => xs.filter((x) => !(x.owner === owner && x.from >= t));
+  return { entry: keep(s.entry), exit: keep(s.exit), reader: keep(s.reader), door: keep(s.door), aisle: keep(s.aisle), lift: s.lift };
 }
 
 /* ---------- public API ---------- */
@@ -696,7 +930,12 @@ export function tripWorld(building: BuildingLayout, site: SiteLayout, routes: Ro
   return { building, site, routes, walk };
 }
 
-const durationOf = (d: Durations, kind: TripKind) => (kind === "arrive" ? d.arrive : d.depart);
+/** Length of a trip; a return lasts the time already spent leaving plus `returnExtra` (as the backend counts it). */
+export function durationOf(d: Durations, trip: Pick<TripInput, "kind" | "start" | "origin">): number {
+  if (trip.kind === "arrive") return d.arrive;
+  if (trip.kind === "depart") return d.depart;
+  return trip.start - (trip.origin ?? trip.start) + (d.returnExtra ?? 12);
+}
 
 /**
  * Trips that still matter at `now`: those in progress plus, transitively, earlier ones they may have queued
@@ -705,7 +944,7 @@ const durationOf = (d: Durations, kind: TripKind) => (kind === "arrive" ? d.arri
 export function relevantTrips(trips: TripInput[], d: Durations, now: number): TripInput[] {
   const sorted = [...trips].sort((a, b) => a.start - b.start || a.agentId - b.agentId);
   const margin = L.home + 10;
-  const endOf = (t: TripInput) => t.start + durationOf(d, t.kind) + margin;
+  const endOf = (t: TripInput) => t.start + durationOf(d, t) + margin;
   const keep = new Set<TripInput>();
   let horizon = now;
   for (let i = sorted.length - 1; i >= 0; i--) {
@@ -722,7 +961,16 @@ export function planTrips(trips: TripInput[], d: Durations, w: TripWorld): Sched
   let state: State = { entry: [], exit: [], reader: [], door: [], aisle: [], lift: [] };
   const plans: Plan[] = [];
   for (const trip of [...trips].sort((a, b) => a.start - b.start || a.agentId - b.agentId)) {
-    const { state: next, ...plan } = fitTrip(w, state, trip, durationOf(d, trip.kind));
+    let origin: Plan | undefined;
+    if (trip.kind === "return" && trip.origin != null) {
+      const i = plans.findIndex((p) => p.trip.agentId === trip.agentId && p.trip.kind === "depart" && Math.abs(p.trip.start - trip.origin!) < 1e-3);
+      if (i >= 0) {
+        origin = plans[i];
+        plans[i] = { ...origin, car: measured(cutAt(origin.car, trip.start)), person: measured(cutAt(origin.person, trip.start)) };
+        state = dropFuture(state, ownerOf(origin.trip), trip.start);
+      }
+    }
+    const { state: next, ...plan } = fitTrip(w, state, trip, d, origin);
     state = next;
     plans.push({ ...plan, car: measured(plan.car), person: measured(plan.person) });
   }

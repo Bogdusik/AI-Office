@@ -33,6 +33,9 @@ class AgentStatus(StrEnum):
     WORKING = "working"
     WAITING_REVIEW = "waiting_review"
     LEAVING = "leaving"
+    """Going home: only when the director releases the agent."""
+    RETURNING = "returning"
+    """Turned back on the way home (a task came before the car left its spot), walking back to the desk."""
 
 
 class ActivityKind(StrEnum):
@@ -45,13 +48,15 @@ class ActivityKind(StrEnum):
     WAITING_REVIEW = "waiting_review"
     IDLE = "idle"
     LEAVING = "leaving"
+    RETURNING = "returning"
 
 
 class TripKind(StrEnum):
-    """An agent's trip between the map edge and their desk."""
+    """An agent's trip between the map edge and their desk, or back to the desk from a departure."""
 
     ARRIVE = "arrive"
     DEPART = "depart"
+    RETURN = "return"
 
 
 class TaskStatus(StrEnum):

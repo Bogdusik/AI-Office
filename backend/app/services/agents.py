@@ -1,12 +1,12 @@
 from collections.abc import Sequence
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.events import publish_agent
 from app.models import Agent, Task
-from app.models.enums import AgentStatus
+from app.models.enums import AgentStatus, TaskStatus
 from app.schemas.agent import AgentCreate, AgentUpdate
 from app.services import rules
 from app.services.errors import ConflictError, NotFoundError
@@ -114,6 +114,53 @@ async def update_agent(session: AsyncSession, agent_id: int, data: AgentUpdate) 
     await session.commit()
     await session.refresh(agent)
     return agent
+
+
+async def _active_task_statuses(session: AsyncSession, agent_id: int) -> list[TaskStatus]:
+    stmt = select(Task.status).where(Task.agent_id == agent_id, Task.status.in_(rules.ACTIVE_STATUSES))
+    return list((await session.scalars(stmt)).all())
+
+
+async def release_agent(session: AsyncSession, agent_id: int) -> Agent:
+    """Sends an agent home (the director's command): only from the office and with nothing to work on."""
+    agent = await get_agent(session, agent_id, lock=True)
+    ensure_active(agent)
+    rules.ensure_releasable(agent.status, await _active_task_statuses(session, agent.id))
+    agent.set_status(AgentStatus.LEAVING, datetime.now(UTC))
+    await session.commit()
+    await session.refresh(agent)
+    publish_agent(agent.id, agent.status)
+    return agent
+
+
+async def release_all(session: AsyncSession, gap: float) -> tuple[list[int], dict[int, str]]:
+    """Sends home everyone who can go, one after another `gap` seconds apart (the first at once, the rest
+    through `leave_at`, which the executor carries out); returns (released ids, the others → why they stay)."""
+    agents = (
+        await session.scalars(
+            select(Agent)
+            .where(Agent.archived_at.is_(None))
+            .order_by(Agent.floor_id, Agent.desk_index, Agent.id)
+            .with_for_update()
+        )
+    ).all()
+    at = datetime.now(UTC)
+    released: list[Agent] = []
+    kept: dict[int, str] = {}
+    for agent in agents:
+        reason = rules.release_blocker(agent.status, await _active_task_statuses(session, agent.id))
+        if reason is not None:
+            kept[agent.id] = reason
+            continue
+        if released:
+            agent.leave_at = at + timedelta(seconds=gap * len(released))
+        else:
+            agent.set_status(AgentStatus.LEAVING, at)
+        released.append(agent)
+    await session.commit()
+    for agent in released:
+        publish_agent(agent.id, agent.status)
+    return [a.id for a in released], kept
 
 
 async def archive_agent(session: AsyncSession, agent_id: int) -> Agent:

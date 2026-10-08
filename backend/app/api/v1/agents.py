@@ -1,8 +1,9 @@
 from fastapi import APIRouter, Depends, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.db.session import get_db
-from app.schemas.agent import AgentCreate, AgentRead, AgentUpdate
+from app.schemas.agent import AgentCreate, AgentRead, AgentUpdate, ReleaseAllResult
 from app.services import agents as service
 
 router = APIRouter(prefix="/agents", tags=["agents"])
@@ -21,6 +22,20 @@ async def list_agents(
 @router.post("", response_model=AgentRead, status_code=status.HTTP_201_CREATED)
 async def create_agent(data: AgentCreate, db: AsyncSession = Depends(get_db)) -> AgentRead:
     return AgentRead.model_validate(await service.create_agent(db, data))
+
+
+@router.post("/release-all", response_model=ReleaseAllResult, status_code=status.HTTP_200_OK)
+async def release_all(db: AsyncSession = Depends(get_db)) -> ReleaseAllResult:
+    """Sends home every agent who can go (in the office, no tasks in progress, queued or with changes requested),
+    one after another `EXECUTOR_RELEASE_GAP_SECONDS` apart."""
+    released, kept = await service.release_all(db, get_settings().executor_release_gap_seconds)
+    return ReleaseAllResult.model_validate({"released": released, "kept": kept})
+
+
+@router.post("/{agent_id}/release", response_model=AgentRead, status_code=status.HTTP_200_OK)
+async def release_agent(agent_id: int, db: AsyncSession = Depends(get_db)) -> AgentRead:
+    """Sends the agent home; 409 when they have tasks in progress, queued or with changes requested, or are not in the office."""
+    return AgentRead.model_validate(await service.release_agent(db, agent_id))
 
 
 @router.get("/{agent_id}", response_model=AgentRead, status_code=status.HTTP_200_OK)

@@ -27,6 +27,31 @@ function useGoToAgent() {
   };
 }
 
+/** «Отпустить всех»: everyone in the office with nothing to work on goes home, one after another. */
+function ReleaseAll({ agents }: { agents: ReturnType<typeof allAgents> }) {
+  const { busy, error, run } = useAction();
+  const free = agents.filter(({ agent }) => agent.release_blocked === null && !agent.leave_at).length;
+  const busyOnes = agents.filter(({ agent }) => agent.release_blocked === "tasks").length;
+  const hint = free
+    ? `Уедут: ${free}${busyOnes ? `, останутся с задачами: ${busyOnes}` : ""}`
+    : busyOnes
+      ? "Некого отпускать: у всех в офисе есть задачи в работе, в очереди или на доработке"
+      : "Некого отпускать: в офисе никого нет";
+  return (
+    <div className="flex flex-wrap items-center gap-3">
+      <span title={free ? undefined : hint}>
+        <Button onClick={() => run("release-all", () => api.releaseAll())} disabled={!free} busy={busy === "release-all"} data-testid="release-all">
+          Отпустить всех{free ? ` (${free})` : ""}
+        </Button>
+      </span>
+      <span className="text-xs text-ink/55" data-testid="release-all-hint">
+        {hint}
+      </span>
+      <ErrorNote text={error} />
+    </div>
+  );
+}
+
 function Team() {
   const world = useWorldStore((s) => s.world);
   const go = useGoToAgent();
@@ -294,7 +319,12 @@ function DirectorView() {
           <CloseButton onClick={back} />
         </header>
         <div className="flex-1 overflow-y-auto px-6 py-5">
-          {tab === "team" && <Team />}
+          {tab === "team" && (
+            <div className="flex flex-col gap-3">
+              {agents.length > 0 && <ReleaseAll agents={agents} />}
+              <Team />
+            </div>
+          )}
           {tab === "review" && <Review />}
           {tab === "profile" && <ProfileTab />}
           {tab === "floors" && <Floors />}

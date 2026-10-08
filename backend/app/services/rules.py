@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol, TypeVar
 
-from app.models.enums import FloorKind, TaskStage, TaskStatus
+from app.models.enums import AgentStatus, FloorKind, TaskStage, TaskStatus
 from app.services.errors import ConflictError, ValidationFailedError
 
 TERMINAL_STATUSES: frozenset[TaskStatus] = frozenset(
@@ -153,6 +153,34 @@ def ensure_floor_empty(active_agents: int) -> None:
 def ensure_no_active_tasks(active_tasks: int) -> None:
     if active_tasks > 0:
         raise ConflictError(f"Agent has {active_tasks} unfinished task(s)")
+
+
+RELEASE_BLOCKING: frozenset[TaskStatus] = frozenset(
+    {TaskStatus.IN_PROGRESS, TaskStatus.QUEUED, TaskStatus.CHANGES_REQUESTED}
+)
+"""Tasks that keep an agent in the office; one waiting for review or paused does not."""
+
+RELEASE_REASONS = {
+    "tasks": "Agent has tasks in progress, queued or with changes requested",
+    "on_the_way": "Agent is on the way to the desk",
+    "away": "Agent is not in the office",
+}
+
+
+def release_blocker(status: AgentStatus, tasks: Iterable[TaskStatus]) -> str | None:
+    """Why the director cannot send the agent home now (a key of `RELEASE_REASONS`), or None."""
+    if status in (AgentStatus.OFF_SITE, AgentStatus.LEAVING):
+        return "away"
+    if status in (AgentStatus.ARRIVING, AgentStatus.RETURNING):
+        return "on_the_way"
+    if status == AgentStatus.WORKING or any(t in RELEASE_BLOCKING for t in tasks):
+        return "tasks"
+    return None
+
+
+def ensure_releasable(status: AgentStatus, tasks: Iterable[TaskStatus]) -> None:
+    if (reason := release_blocker(status, tasks)) is not None:
+        raise ConflictError(RELEASE_REASONS[reason])
 
 
 def first_free_desk(taken: Iterable[int], capacity: int) -> int:
