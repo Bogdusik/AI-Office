@@ -51,9 +51,9 @@ class Timings:
     """Fallback re-check interval; events usually wake things up sooner."""
     progress: float = 1.0
     """How often text produced so far is saved to the run while a stage runs."""
-    turn_back: float = 52.0
+    turn_back: float = 50.0
     """A task that comes this long into a departure or sooner turns the agent back (the car has not moved yet)."""
-    return_extra: float = 5.0
+    return_extra: float = 12.0
     """A return lasts the time already spent leaving plus this."""
 
     def return_seconds(self, origin: datetime, started: datetime) -> float:
@@ -244,7 +244,7 @@ class Executor:
             loaded = await self._load(agent_id)
             if loaded is None:
                 return
-            status, since, origin, tasks = loaded
+            status, since, origin, leave_at, tasks = loaded
             nxt = rules.pick_next_task(tasks)
 
             if status == AgentStatus.OFF_SITE:
@@ -260,6 +260,13 @@ class Executor:
                 await self._leave(agent_id, since, nxt is not None)
             elif nxt is not None:
                 await self._work(agent_id, nxt.id)
+            elif leave_at is not None and status in (AgentStatus.IDLE, AgentStatus.WAITING_REVIEW):
+                # Let go with «Отпустить всех»: leaves at the planned time (nothing to work on, so allowed).
+                due = (leave_at - now()).total_seconds()
+                if due <= 0:
+                    await self._set_status(agent_id, AgentStatus.LEAVING, expected=status)
+                else:
+                    await self._wait_poke(agent_id, due)
             elif any(t.status == TaskStatus.NEEDS_REVIEW for t in tasks):
                 await self._set_status(agent_id, AgentStatus.WAITING_REVIEW, expected=status)
                 await self._wait_poke(agent_id)
@@ -289,7 +296,9 @@ class Executor:
         """Trips last `duration` from the status start, also across a server restart."""
         return duration - (now() - since).total_seconds()
 
-    async def _load(self, agent_id: int) -> tuple[AgentStatus, datetime, datetime | None, list[Task]] | None:
+    async def _load(
+        self, agent_id: int
+    ) -> tuple[AgentStatus, datetime, datetime | None, datetime | None, list[Task]] | None:
         async with self._sessions() as s:
             agent = await s.scalar(
                 select(Agent).where(Agent.id == agent_id).execution_options(populate_existing=True)
@@ -301,7 +310,7 @@ class Executor:
                     select(Task).where(Task.agent_id == agent_id, Task.status.in_(rules.ACTIVE_STATUSES))
                 )
             ).all()
-            return agent.status, agent.status_since, agent.trip_origin_at, list(tasks)
+            return agent.status, agent.status_since, agent.trip_origin_at, agent.leave_at, list(tasks)
 
     async def _set_status(
         self, agent_id: int, status: AgentStatus, origin: datetime | None = None, expected: AgentStatus | None = None

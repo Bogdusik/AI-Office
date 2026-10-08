@@ -1,5 +1,5 @@
 from collections.abc import Sequence
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -133,27 +133,34 @@ async def release_agent(session: AsyncSession, agent_id: int) -> Agent:
     return agent
 
 
-async def release_all(session: AsyncSession) -> tuple[list[int], dict[int, str]]:
-    """Sends home everyone who can go; returns (released ids, the others → why they stay)."""
+async def release_all(session: AsyncSession, gap: float) -> tuple[list[int], dict[int, str]]:
+    """Sends home everyone who can go, one after another `gap` seconds apart (the first at once, the rest
+    through `leave_at`, which the executor carries out); returns (released ids, the others → why they stay)."""
     agents = (
         await session.scalars(
-            select(Agent).where(Agent.archived_at.is_(None)).order_by(Agent.id).with_for_update()
+            select(Agent)
+            .where(Agent.archived_at.is_(None))
+            .order_by(Agent.floor_id, Agent.desk_index, Agent.id)
+            .with_for_update()
         )
     ).all()
     at = datetime.now(UTC)
-    released: list[int] = []
+    released: list[Agent] = []
     kept: dict[int, str] = {}
     for agent in agents:
         reason = rules.release_blocker(agent.status, await _active_task_statuses(session, agent.id))
-        if reason is None:
-            agent.set_status(AgentStatus.LEAVING, at)
-            released.append(agent.id)
-        else:
+        if reason is not None:
             kept[agent.id] = reason
+            continue
+        if released:
+            agent.leave_at = at + timedelta(seconds=gap * len(released))
+        else:
+            agent.set_status(AgentStatus.LEAVING, at)
+        released.append(agent)
     await session.commit()
-    for agent_id in released:
-        publish_agent(agent_id, AgentStatus.LEAVING)
-    return released, kept
+    for agent in released:
+        publish_agent(agent.id, agent.status)
+    return [a.id for a in released], kept
 
 
 async def archive_agent(session: AsyncSession, agent_id: int) -> Agent:

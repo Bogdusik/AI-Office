@@ -30,11 +30,13 @@ def upgrade() -> None:
     op.drop_constraint(op.f("ck_agents_trip_kind"), "agents", type_="check")
     op.create_check_constraint(op.f("ck_agents_trip_kind"), "agents", _in("trip_kind", (*TRIPS, "return")))
     op.add_column("agents", sa.Column("trip_origin_at", sa.DateTime(timezone=True), nullable=True))
+    op.add_column("agents", sa.Column("leave_at", sa.DateTime(timezone=True), nullable=True))
 
 
 def downgrade() -> None:
     op.execute("UPDATE agents SET status = 'idle', trip_kind = 'arrive' WHERE status = 'returning'")
     op.execute("UPDATE agents SET trip_kind = 'arrive' WHERE trip_kind = 'return'")
+    op.drop_column("agents", "leave_at")
     op.drop_column("agents", "trip_origin_at")
     op.drop_constraint(op.f("ck_agents_trip_kind"), "agents", type_="check")
     op.create_check_constraint(op.f("ck_agents_trip_kind"), "agents", _in("trip_kind", TRIPS))

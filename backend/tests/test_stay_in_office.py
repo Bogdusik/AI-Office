@@ -8,6 +8,7 @@ from httpx import AsyncClient
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
+from app.core.config import get_settings
 from app.events import Event
 from app.executor import Executor, Timings
 from app.models import Agent, Task
@@ -248,13 +249,40 @@ async def test_release_all_sends_home_who_can_go_and_keeps_the_busy(
     res = await client.post("/api/v1/agents/release-all")
 
     assert res.status_code == 200
-    assert sorted(res.json()["released"]) == sorted([free["id"], reviewing["id"]])
+    first, second = res.json()["released"]
+    assert sorted([first, second]) == sorted([free["id"], reviewing["id"]])
     assert res.json()["kept"] == {str(busy["id"]): "tasks", str(away["id"]): "away"}
-    await until(world.is_agent(free["id"], AgentStatus.OFF_SITE))
-    await until(world.is_agent(reviewing["id"], AgentStatus.OFF_SITE))
+    # One after another: the first goes at once, the next one `EXECUTOR_RELEASE_GAP_SECONDS` later.
+    await until(world.is_agent(first, AgentStatus.OFF_SITE))
+    state = (await client.get("/api/v1/state")).json()
+    later = _state_of(state, second)
+    assert later["status"] in (AgentStatus.IDLE, AgentStatus.WAITING_REVIEW) and later["leave_at"] is not None
+    gap = datetime.fromisoformat(later["leave_at"]) - datetime.now(UTC)
+    assert timedelta(seconds=2) < gap <= timedelta(seconds=get_settings().executor_release_gap_seconds)
+    await until(world.is_agent(second, AgentStatus.OFF_SITE), timeout=8)
     assert await world.agent_status(busy["id"]) == AgentStatus.WORKING
     assert await world.task_status(review_task["id"]) == TaskStatus.NEEDS_REVIEW
     assert (await client.post("/api/v1/agents/release-all")).json()["released"] == []
+
+
+async def test_a_task_before_the_planned_departure_keeps_the_agent_at_work(
+    client: AsyncClient,
+    session_factory: async_sessionmaker[AsyncSession],
+    world: World,
+    run_executor: Callable[..., Awaitable[Executor]],
+    make_floor: Factory,
+    make_agent: Factory,
+    make_task: Factory,
+) -> None:
+    floor = await make_floor()
+    await run_executor()
+    agent = await _in_office(client, world, make_agent, make_task, floor["id"])
+    await _set_agent(session_factory, agent["id"], leave_at=datetime.now(UTC) + timedelta(seconds=30))
+
+    task = await make_task(agent["id"])
+    await until(world.is_task(task["id"], TaskStatus.NEEDS_REVIEW))
+    async with world.sessions() as s:
+        assert (await s.get_one(Agent, agent["id"])).leave_at is None
 
 
 async def test_after_a_restart_everyone_in_the_office_stays_and_trips_finish_on_time(
