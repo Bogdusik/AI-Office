@@ -20,6 +20,9 @@ type UiStore = {
   collapsed: Record<HudBlock, boolean>;
   /** Animated arrivals and departures; off: people and cars simply appear and disappear (stage 6). */
   animation: boolean;
+  /** Office life on top of the animation (coffee, lounge, strolls, talks); off: everyone at their desk. */
+  life: boolean;
+  setLife: (on: boolean) => void;
   /** Agent the camera follows (person or car), if any. */
   follow: number | null;
   setAnimation: (on: boolean) => void;
@@ -40,6 +43,16 @@ type UiStore = {
 };
 
 const ANIMATION_KEY = "ai-office:animation";
+const LIFE_KEY = "ai-office:life";
+
+/** The director's last choice for office life (read after hydration, like `storedAnimation`). */
+export function storedLife(): boolean {
+  try {
+    return localStorage.getItem(LIFE_KEY) !== "0";
+  } catch {
+    return true;
+  }
+}
 
 /** The director's last choice, read after hydration (the server always renders with animation on). */
 export function storedAnimation(): boolean {
@@ -62,6 +75,13 @@ export const useUiStore = create<UiStore>((set, get) => ({
   focus: null,
   collapsed: { metrics: false, list: false, ribbon: false },
   animation: true,
+  life: true,
+  setLife: (life) => {
+    try {
+      localStorage.setItem(LIFE_KEY, life ? "1" : "0");
+    } catch {}
+    set({ life });
+  },
   follow: null,
   setAnimation: (animation) => {
     try {
