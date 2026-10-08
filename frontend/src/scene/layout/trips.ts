@@ -11,11 +11,13 @@ import { type BuildingLayout, coreLayout } from "./building";
 import { DIM } from "./dims";
 import { MAP_EDGES, type Routes, type SiteLayout } from "./site";
 import { type Vec3, rectCenter } from "./types";
+import type { LeaveFrom } from "./life";
 import { WALK, type WalkGraph, findPath } from "./walk";
 
 export type TripKind = "arrive" | "depart";
 /** `start` in seconds on the server clock. */
-export type TripInput = { agentId: number; kind: TripKind; start: number; floorIndex: number; deskIndex: number; spot: number };
+/** `from`: where a leaving agent is when the departure starts (office life); absent → seated at the desk. */
+export type TripInput = { agentId: number; kind: TripKind; start: number; floorIndex: number; deskIndex: number; spot: number; from?: LeaveFrom | null };
 export type Durations = { arrive: number; depart: number };
 export type TripWorld = { building: BuildingLayout; site: SiteLayout; routes: Routes; walk: WalkGraph };
 
@@ -35,10 +37,21 @@ export type Seg = {
   ride?: boolean;
   hidden?: boolean;
   tap?: boolean;
+  /** Office life: what the person is doing (pose), carrying a cup, talking to `partner`, the seat being used. */
+  act?: LifeAct;
+  carry?: boolean;
+  partner?: number;
+  seat?: SeatRef;
+  /** Walking graph node of every point ("" for a point between nodes), so a walk can be interrupted mid-way. */
+  ids?: string[];
   /** Filled by `planTrips`: cumulative lengths along `pts` and the distance covered before this segment. */
   cum?: number[];
   before?: number;
 };
+
+export type LifeAct = "type" | "lean" | "sofa" | "stand" | "window" | "talk" | "brew";
+/** A seat in use: the seat node, the node one steps to when standing up, the facing while seated. */
+export type SeatRef = { seat: string; front: string; yaw: number };
 
 /** `squeeze` < 1: the final stretch had to go faster than the pace to end on time (busy gate, reader or lift). */
 export type Plan = { trip: TripInput; end: number; car: Seg[]; person: Seg[]; pace: number; delay: number; squeeze: number };
@@ -98,7 +111,7 @@ export function rounded(pts: Vec3[], r: number, steps = 7): Vec3[] {
 }
 
 /** Cumulative 3D lengths along a polyline. */
-function cumulative(pts: Vec3[]): number[] {
+export function cumulative(pts: Vec3[]): number[] {
   const cum = [0];
   for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + dist3(pts[i - 1], pts[i]));
   return cum;
@@ -180,7 +193,7 @@ function moveSeg(t0: number, pts: Vec3[], v: number, profile: Profile, extra: Pa
   return { t0, t1: t0 + T, pts: dense, times, ...extra };
 }
 
-function walkSeg(t0: number, pts: Vec3[], pace: number, extra: Partial<Seg> = {}): Seg {
+export function walkSeg(t0: number, pts: Vec3[], pace: number, extra: Partial<Seg> = {}): Seg {
   const times = [t0];
   for (let i = 1; i < pts.length; i++) {
     const [a, b] = [pts[i - 1], pts[i]];
@@ -190,15 +203,15 @@ function walkSeg(t0: number, pts: Vec3[], pace: number, extra: Partial<Seg> = {}
   return { t0, t1: times.at(-1)!, pts, times, ...extra };
 }
 
-const holdSeg = (t0: number, t1: number, p: Vec3, yaw: number, extra: Partial<Seg> = {}): Seg => ({ t0, t1, pts: [p], times: [t0], yaw, ...extra });
-const timedSeg = (t0: number, t1: number, pts: Vec3[], extra: Partial<Seg> = {}): Seg => {
+export const holdSeg = (t0: number, t1: number, p: Vec3, yaw: number, extra: Partial<Seg> = {}): Seg => ({ t0, t1, pts: [p], times: [t0], yaw, ...extra });
+export const timedSeg = (t0: number, t1: number, pts: Vec3[], extra: Partial<Seg> = {}): Seg => {
   const cum = cumulative(pts);
   const total = cum.at(-1)! || 1;
   return { t0, t1, pts, times: cum.map((c) => t0 + ((t1 - t0) * c) / total), ...extra };
 };
 
 /** Facing at the end of a segment (direction of its last move). */
-function endYaw(seg: Seg, fallback = 0): number {
+export function endYaw(seg: Seg, fallback = 0): number {
   if (seg.yaw !== undefined && seg.pts.length < 2) return seg.yaw;
   for (let i = seg.pts.length - 1; i > 0; i--) {
     const [a, b] = [seg.pts[i - 1], seg.pts[i]];
@@ -522,6 +535,29 @@ function arriveSim(w: TripWorld, base: State, trip: TripInput, pace: number, del
   return { car, person, state: st, end: sit.t1, tailFrom: lastResource };
 }
 
+/** First steps of a departure: stand up from the desk (or the sofa), or step from wherever office life left them. */
+function leaveStart(w: TripWorld, trip: TripInput, pace: number, person: Seg[]): { t: number; id: string; floor: number } {
+  const desk = WALK.seat(trip.floorIndex, trip.deskIndex);
+  const from = trip.from;
+  const floorOf = (id: string) => w.walk.nodes.get(id)?.floor ?? trip.floorIndex;
+  if (!from || from.seated?.seat === desk) {
+    const app = WALK.approach(trip.floorIndex, trip.deskIndex);
+    person.push(timedSeg(trip.start, trip.start + M.sit * pace, [nodePos(w, desk), nodePos(w, app)], { yaw: 0, sit: [1, 0] }));
+    return { t: trip.start + M.sit * pace, id: app, floor: trip.floorIndex };
+  }
+  if (from.seated) {
+    const t = trip.start + M.sit * pace;
+    person.push(timedSeg(trip.start, t, [nodePos(w, from.seated.seat), nodePos(w, from.seated.front)], { yaw: from.seated.yaw, sit: [1, 0] }));
+    return { t, id: from.seated.front, floor: floorOf(from.seated.front) };
+  }
+  const ends = [from.at.prev, from.at.next].filter((id) => w.walk.nodes.has(id));
+  const id = ends.sort((a, b) => dist3(from.at.pos, nodePos(w, a)) - dist3(from.at.pos, nodePos(w, b)))[0] ?? WALK.approach(trip.floorIndex, trip.deskIndex);
+  const step = walkSeg(trip.start, [from.at.pos, nodePos(w, id)], pace);
+  if (dist3(from.at.pos, nodePos(w, id)) > 1e-3) person.push(step);
+  else person.push(holdSeg(trip.start, trip.start, from.at.pos, 0));
+  return { t: step.t1, id, floor: floorOf(id) };
+}
+
 function departSim(w: TripWorld, base: State, trip: TripInput, pace: number, delay: number): Sim {
   const st = cloneState(base);
   const { site, routes } = w;
@@ -529,13 +565,17 @@ function departSim(w: TripWorld, base: State, trip: TripInput, pace: number, del
   const edge = edgesFor(trip.agentId).to;
   const person: Seg[] = [];
 
-  const seat = nodePos(w, WALK.seat(trip.floorIndex, trip.deskIndex));
-  const app = nodePos(w, WALK.approach(trip.floorIndex, trip.deskIndex));
-  const stand = timedSeg(trip.start, trip.start + M.sit * pace, [seat, app], { yaw: 0, sit: [1, 0] });
-  person.push(stand);
-  const walkToLift = walkSeg(stand.t1, pathOf(w, WALK.approach(trip.floorIndex, trip.deskIndex), WALK.lift(trip.floorIndex)), pace);
-  person.push(walkToLift);
-  const down = changeFloors(w, st, pace, walkToLift.t1, trip.floorIndex, 0, WALK.lift(0), person);
+  const start = leaveStart(w, trip, pace, person);
+  let down = start.t;
+  if (start.floor > 0) {
+    const walkToLift = walkSeg(start.t, pathOf(w, start.id, WALK.lift(start.floor)), pace);
+    person.push(walkToLift);
+    down = changeFloors(w, st, pace, walkToLift.t1, start.floor, 0, WALK.lift(0), person);
+  } else {
+    const walkDown = walkSeg(start.t, pathOf(w, start.id, WALK.lift(0)), pace);
+    person.push(walkDown);
+    down = walkDown.t1;
+  }
   const toCar = walkSeg(down, pathOf(w, WALK.lift(0), WALK.carSide(trip.spot)), pace);
   person.push(toCar);
   const doorAt = timeNear(toCar, nodePos(w, WALK.insideDoor));
@@ -691,7 +731,7 @@ export function planTrips(trips: TripInput[], d: Durations, w: TripWorld): Sched
 
 /* ---------- sampling ---------- */
 
-function measured(segs: Seg[]): Seg[] {
+export function measured(segs: Seg[]): Seg[] {
   let before = 0;
   return segs.map((seg) => {
     const cum = cumulative(seg.pts);
@@ -701,7 +741,19 @@ function measured(segs: Seg[]): Seg[] {
   });
 }
 
-export type Pose = { visible: boolean; pos: Vec3; yaw: number; sit: number; walked: number; speed: number; tapping: boolean; riding: boolean };
+export type Pose = {
+  visible: boolean;
+  pos: Vec3;
+  yaw: number;
+  sit: number;
+  walked: number;
+  speed: number;
+  tapping: boolean;
+  riding: boolean;
+  act?: LifeAct;
+  carry?: boolean;
+  partner?: number;
+};
 
 function segAt(segs: Seg[], t: number): Seg {
   for (const s of segs) if (t < s.t1) return s;
@@ -747,7 +799,19 @@ export function sample(segs: Seg[], t: number, lift?: { runs: LiftRun[]; ys: num
   const before = seg.before ?? 0;
   const dt = 0.1;
   const speed = moving ? dist2(posIn(seg, t - dt), posIn(seg, t + dt)) / (2 * dt) : 0;
-  return { visible: !seg.hidden, pos, yaw, sit, walked: before + walkedIn(seg, t), speed, tapping: !!seg.tap && t >= seg.t0 && t < seg.t1, riding: !!seg.ride };
+  return {
+    visible: !seg.hidden,
+    pos,
+    yaw,
+    sit,
+    walked: before + walkedIn(seg, t),
+    speed,
+    tapping: !!seg.tap && t >= seg.t0 && t < seg.t1,
+    riding: !!seg.ride,
+    act: seg.act,
+    carry: seg.carry,
+    partner: seg.partner,
+  };
 }
 
 export const liftHeights = liftFloors;

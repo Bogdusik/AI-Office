@@ -40,7 +40,27 @@ export const DIM = {
    * talking; `talkAside`: conversation places stand this far off the right corridor; sofa seats are reached from
    * `sofaSide` left of the lounge centre along a strip `sofaFront` in front of the sofa.
    */
-  life: { windowZ: 0.65, talkGap: 0.95, talkAside: 0.4, sofaSide: 1.65, sofaFront: 0.83 },
+  life: {
+    windowZ: 0.65,
+    talkGap: 0.95,
+    talkAside: 0.4,
+    sofaSide: 1.65,
+    sofaFront: 0.83,
+    queueExit: 0.8,
+    /** Waiting for the model longer than this (s) → coffee; `busyWait` when two or more wait ahead. */
+    shortWait: 30,
+    busyWait: 10,
+    /** At most this many coffee trips at a time (the queue has 4 places). */
+    coffeeTrips: 3,
+    brew: 8,
+    /** Global grid for strolls and conversations (s); conversations start on even legs and last two legs. */
+    leg: 30,
+    talkChance: 0.45,
+    /** Walking back to the desk after a real change is this much faster. */
+    hurry: 1.5,
+    stand: 1.1,
+    queueStep: 1,
+  },
   /** Walking graph: a person's clearance radius and the stair opening from a floor to its landing. */
   walk: { radius: 0.28, stairDoor: 1.05, readerStand: 0.55, carSide: 1.35, outside: 0.8, inside: 0.7 },
   /**

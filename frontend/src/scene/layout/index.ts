@@ -12,3 +12,4 @@ export * from "./site";
 export * from "./types";
 export * from "./walk";
 export * from "./trips";
+export * from "./life";
