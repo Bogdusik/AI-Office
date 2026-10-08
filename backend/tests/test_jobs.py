@@ -24,7 +24,7 @@ def adzuna_item(n: int, title: str, company: str, town: str, *, days_old: int = 
         "salary_max": 36000,
         "salary_is_predicted": "0",
         "created": f"{TODAY - timedelta(days=days_old)}T09:00:00Z",
-        "redirect_url": f"https://www.adzuna.co.uk/jobs/land/ad/{1000 + n}?se=abc",
+        "redirect_url": f"https://www.adzuna.co.uk/jobs/land/ad/{1000 + n}?se=abc&utm_medium=api&utm_source={ADZUNA_ID}&v=SIG",
         "description": description,
     }
 
@@ -85,6 +85,8 @@ async def test_adzuna_search_maps_fields_and_sends_parameters() -> None:
     assert (job.source, job.title, job.company, job.location) == ("adzuna", "Junior Python Developer", "Kestrel Payments Ltd", "Leeds, West Yorkshire")
     assert (job.salary, job.posted, job.full) == ("£32,000–£36,000", TODAY - timedelta(days=1), False)
     assert job.links == {"adzuna": job.url} and job.ids == {"adzuna": "1001"}
+    assert job.url == "https://www.adzuna.co.uk/jobs/land/ad/1001?se=abc&v=SIG"
+    assert ADZUNA_ID not in job.url
 
 
 async def test_reed_search_uses_basic_auth_and_filters_by_date() -> None:

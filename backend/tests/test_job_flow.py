@@ -63,7 +63,7 @@ async def test_a_search_task_keeps_its_vacancies_and_the_filter_on_the_result(
     agent = await make_agent(floor["id"], tools=["jobs"])
     task = await make_task(agent["id"], title="Junior Python roles in Leeds")
     tools, _, _ = job_tools(SEARCH_RESULTS)
-    excluded_url = SEARCH_RESULTS["results"][1]["redirect_url"]
+    excluded_url = "https://www.adzuna.co.uk/jobs/land/ad/1002?se=abc&v=SIG"
     final = f"# Shortlist\n- Junior Python Developer — Kestrel Payments\n- Python Engineer — Aegis Defence — {excluded_url}"
     ollama = FakeOllama(
         [
