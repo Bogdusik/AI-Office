@@ -1,6 +1,7 @@
 "use client";
 
 import ReactMarkdown, { type Components } from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 const components: Components = {
   h1: ({ children }) => <h1 className="mt-3 mb-2 text-base font-semibold text-ink first:mt-0">{children}</h1>,
@@ -19,13 +20,35 @@ const components: Components = {
   ),
   hr: () => <hr className="my-3 border-line" />,
   strong: ({ children }) => <strong className="font-semibold text-ink">{children}</strong>,
+  table: ({ children }) => (
+    <div className="my-2 overflow-x-auto rounded-lg border border-line">
+      <table className="w-full border-collapse text-[13px] [overflow-wrap:normal]">{children}</table>
+    </div>
+  ),
+  thead: ({ children }) => <thead className="bg-paper/80 text-left">{children}</thead>,
+  tr: ({ children }) => <tr className="border-t border-line first:border-t-0">{children}</tr>,
+  th: ({ children, style }) => (
+    <th className="px-2.5 py-1.5 align-bottom font-semibold whitespace-nowrap text-ink" style={style}>
+      {children}
+    </th>
+  ),
+  td: ({ children, style }) => (
+    <td className="px-2.5 py-1.5 align-top" style={style}>
+      {children}
+    </td>
+  ),
+  del: ({ children }) => <del className="text-ink/50">{children}</del>,
 };
 
-/** Model output as Markdown; raw HTML is not rendered. */
+const plugins = [remarkGfm];
+
+/** Model output as Markdown (GitHub flavour: tables, strikethrough, task lists, autolinks); raw HTML is not rendered. */
 export function Markdown({ text }: { text: string }) {
   return (
     <div className="text-sm text-ink/90 [overflow-wrap:anywhere]">
-      <ReactMarkdown components={components}>{text}</ReactMarkdown>
+      <ReactMarkdown remarkPlugins={plugins} components={components}>
+        {text}
+      </ReactMarkdown>
     </div>
   );
 }
