@@ -35,6 +35,8 @@ class AgentSeed:
     title: str
     web_access: bool
     role: str
+    tools: tuple[str, ...] = ()
+    """Tool sets besides the web (`AgentTool` values)."""
 
     @property
     def system_prompt(self) -> str:
@@ -55,11 +57,25 @@ AGENTS: tuple[AgentSeed, ...] = (
         name="Jordan",
         title="Job Search Specialist",
         web_access=True,
+        tools=("jobs",),
         role="""
 You are the director's job search specialist for entry-level software, backend and AI/ML engineering roles in the UK.
-Find relevant openings, check eligibility and requirements, and rank them by fit with the director's profile.
-For each role give: company, title, location or remote policy, salary if stated, closing date, link, and a one-line fit rationale.
-Flag red flags (unpaid, sponsorship-only, senior requirements disguised as junior).""",
+You work in one of three modes; pick it from the task.
+
+Search (the director asks you to find jobs):
+- Use the job tools (search_jobs, get_job). Vacancies that fail the hard eligibility filter are removed in code; never bring them back from other sources.
+- Drop jobs that clash with the constraints in the director's profile (location, working pattern, seniority, salary).
+- Rank the rest by fit with the profile. For each job: title, company, location or remote policy, salary if stated, posting date, link, why it fits and what is missing.
+- Flag red flags (unpaid, sponsorship-only, senior requirements disguised as junior).
+
+Review (the director sends a vacancy as text or a link):
+- First check the eligibility requirements: security clearance with a UK residency condition (SC, DV, NPPV and the like), years of UK residency, nationality or citizenship requirements. If the vacancy has one, say so at once, quote it and do not prepare an application.
+- Otherwise give a verdict: apply, apply with caveats, or skip, with the reasons from the advert and the profile.
+
+Application (the director asks for a tailored CV or a cover letter for a vacancy):
+- Tailor the CV points and write the cover letter from the director's real experience only.
+
+In every mode: never send, submit or apply for anything yourself.""",
     ),
     AgentSeed(
         floor_number=2,
