@@ -30,7 +30,7 @@ from app.executor.worker import (
     TaskSnapshot,
 )
 from app.models import Agent, Artifact, Profile, Run, Task, TaskComment
-from app.models.enums import AgentStatus, RunStatus, TaskStage, TaskStatus
+from app.models.enums import ActivityKind, AgentStatus, RunStatus, TaskStage, TaskStatus
 from app.models.profile import PROFILE_ID
 from app.services import rules
 from app.services.tasks import apply_transition
@@ -69,9 +69,11 @@ class _RunReport:
 
     async def waiting(self) -> None:
         await self._ex._set_run_status(self, RunStatus.WAITING)
+        await self._ex._set_activity(self.agent_id, ActivityKind.WAITING_MODEL)
 
     async def started(self) -> None:
         await self._ex._set_run_status(self, RunStatus.RUNNING)
+        await self._ex._set_activity(self.agent_id, ActivityKind.WORKING)
 
     def partial(self, text: str) -> None:
         self._text = text
@@ -286,6 +288,19 @@ class Executor:
             agent.set_status(status, now())
             await s.commit()
         publish_agent(agent_id, status)
+
+    async def _set_activity(self, agent_id: int, kind: ActivityKind) -> None:
+        """Waiting for / back on the model, only while the agent is at work (a status change always wins)."""
+        async with self._sessions() as s:
+            agent = await s.scalar(select(Agent).where(Agent.id == agent_id).with_for_update())
+            if agent is None or agent.status != AgentStatus.WORKING:
+                return
+            before = list(agent.activity_log or [])
+            agent.set_activity(kind, now())
+            changed = agent.activity_log != before
+            await s.commit()
+        if changed:
+            publish_agent(agent_id, AgentStatus.WORKING)
 
     # ---------- task work ----------
 

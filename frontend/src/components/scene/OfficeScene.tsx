@@ -24,10 +24,12 @@ function World({ world }: { world: WorldState }) {
   const selected = useUiStore((s) => s.selectedFloor);
   const preview = useUiStore((s) => s.preview);
   const animation = useUiStore((s) => s.animation);
+  const life = useUiStore((s) => s.life);
   const animated = animation && !preview;
-  const floors = useMemo(() => toFloorData(world, preview, animated), [world, preview, animated]);
+  const living = animated && life;
+  const floors = useMemo(() => toFloorData(world, preview, animated, living), [world, preview, animated, living]);
   const serverBusy = world.stats.model_busy;
-  const scene = useMemo(() => buildScene(floors, (n) => isFloorVisible(n, selected), { serverBusy }), [floors, selected, serverBusy]);
+  const scene = useMemo(() => buildScene(floors, (n) => isFloorVisible(n, selected), { serverBusy, liveStaff: living }), [floors, selected, serverBusy, living]);
   const viewport = useThree((s) => s.size);
   const home = useMemo(() => cameraHome(building, site, viewport), [building, site, viewport]);
   const [cx, cz] = rectCenter(site.focus);
@@ -62,7 +64,7 @@ function World({ world }: { world: WorldState }) {
       <Suspense fallback={null}>
         <Building scene={scene} homeZoom={home.zoom} />
       </Suspense>
-      <Motion world={world} scene={scene} enabled={animated} />
+      <Motion world={world} scene={scene} enabled={animated} life={life} />
     </>
   );
 }

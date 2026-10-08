@@ -28,6 +28,18 @@ class AgentStatus(StrEnum):
     LEAVING = "leaving"
 
 
+class ActivityKind(StrEnum):
+    """What an agent is doing, for the scene: the status, with work split into working / waiting for the model."""
+
+    OFF_SITE = "off_site"
+    ARRIVING = "arriving"
+    WORKING = "working"
+    WAITING_MODEL = "waiting_model"
+    WAITING_REVIEW = "waiting_review"
+    IDLE = "idle"
+    LEAVING = "leaving"
+
+
 class TripKind(StrEnum):
     """An agent's trip between the map edge and their desk."""
 

@@ -3,7 +3,7 @@
 import { useSearchParams } from "next/navigation";
 import { useEffect } from "react";
 import { useTasksStore } from "@/store/useTasksStore";
-import { storedAnimation, useUiStore } from "@/store/useUiStore";
+import { storedAnimation, storedLife, useUiStore } from "@/store/useUiStore";
 import { useWorldStore } from "@/store/useWorldStore";
 
 export function WorldSync() {
@@ -17,7 +17,7 @@ export function WorldSync() {
   const routes = params.get("routes") === "1";
 
   useEffect(() => startPolling(), [startPolling]);
-  useEffect(() => useUiStore.setState({ animation: storedAnimation() }), []);
+  useEffect(() => useUiStore.setState({ animation: storedAnimation(), life: storedLife() }), []);
   useEffect(() => {
     if (world) void refreshTasks();
   }, [world, refreshTasks]);

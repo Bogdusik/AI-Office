@@ -15,8 +15,10 @@ import {
   floorObstacles,
   greenery,
   inRect,
+  type LifeInput,
   type Plan,
   type TripInput,
+  planLife,
   liftHeights,
   outdoorObstacles,
   planTrips,
@@ -150,6 +152,13 @@ for (const [label, floors, expectedSpots] of [
     assert.ok(targets.length > 10);
     for (const id of targets) assert.ok(findPath(walk, WALK.outsideDoor, id), `${id} reachable from the entrance`);
     for (const s of site.spots) assert.ok(findPath(walk, WALK.carSide(s.index), WALK.reader), `reader reachable from spot ${s.index}`);
+    const kitchen = building.floors.find((f) => f.hasKitchen)!;
+    const places = [0, 1, 2, 3].map((n) => WALK.coffee(kitchen.index, n));
+    places.push(...[0, 1, 2].flatMap((n) => [WALK.sofa(kitchen.index, n), WALK.sofaFront(kitchen.index, n)]));
+    for (const f of building.floors.filter((x) => x.kind === "office")) {
+      places.push(...[0, 1, 2].map((n) => WALK.window(f.index, n)), ...[0, 1].flatMap((p) => [WALK.talk(f.index, p, 0), WALK.talk(f.index, p, 1)]));
+      for (let d = 0; d < f.capacity; d++) for (const id of places) assert.ok(findPath(walk, WALK.seat(f.index, d), id), `${id} reachable from desk ${f.index}/${d}`);
+    }
     for (const f of building.floors) {
       assert.ok(walk.nodes.has(WALK.lift(f.index)), `lift stop on floor ${f.number}`);
       assert.ok(findPath(walk, WALK.lift(0), WALK.lift(f.index)), `stairs reach floor ${f.number}`);
@@ -164,6 +173,7 @@ for (const [label, floors, expectedSpots] of [
     const byFloor = building.floors.map((f) => floorObstacles(building, f));
     let tested = 0;
     for (const e of walk.edges) {
+      if (e.seat) continue;
       const a = walk.nodes.get(e.a)!;
       const c = walk.nodes.get(e.b)!;
       const floorIndex = a.floor ?? c.floor;
@@ -308,6 +318,118 @@ for (const [label, floors, expectedSpots] of [
     assert.equal(relevantTrips([...old, overlapping], D, 100).length, old.length + 1);
     const alone = planTrips(recent, D, world).plans;
     assert.deepEqual(planTrips(relevantTrips([...old, ...recent], D, 520), D, world).plans, alone);
+  });
+}
+
+/* ---------- office life ---------- */
+
+{
+  const scene = buildScene(standard, () => true);
+  const { building, site } = scene;
+  const walk = walkGraph(building, site);
+  const w = { building, walk };
+  const T = 10_000;
+  const H = T + 600;
+  type Entry = LifeInput["log"][number];
+  const arrived = (rest: Entry[]): Entry[] => [{ kind: "arriving", since: T - 75 }, { kind: "idle", since: T }, ...rest];
+  const desks: [number, number][] = [[1, 0], [1, 1], [1, 2], [1, 3], [2, 0], [2, 1]];
+  const busy: LifeInput[] = desks.map(([f, d], i) => ({
+    agentId: i + 1,
+    floorIndex: f,
+    deskIndex: d,
+    log: arrived(
+      i < 3
+        ? [{ kind: "working", since: T + 1 }, { kind: "waiting_model", since: T + 4 + i }]
+        : i === 3
+          ? [{ kind: "working", since: T + 1 }, { kind: "waiting_review", since: T + 30 }]
+          : [],
+    ),
+  }));
+  const seatOf = (a: LifeInput) => walk.nodes.get(WALK.seat(a.floorIndex, a.deskIndex))!.p;
+  const atSeat = (a: LifeInput, pos: Vec3) => Math.hypot(pos[0] - seatOf(a)[0], pos[1] - seatOf(a)[1], pos[2] - seatOf(a)[2]) < 0.05;
+
+  check("office life: planning is deterministic and a later log entry never changes what came before it", () => {
+    const one = planLife(busy, w, H);
+    assert.deepEqual(planLife(busy, w, H), one);
+    const later = busy.map((a) => (a.agentId === 2 ? { ...a, log: [...a.log, { kind: "working" as const, since: T + 140 }] } : a));
+    const two = planLife(later, w, H);
+    for (let t = T; t < T + 140 - 0.01; t += 0.5)
+      for (let i = 0; i < busy.length; i++) assert.deepEqual(sample(two.plans[i].segs, t).pos, sample(one.plans[i].segs, t).pos, `agent ${i + 1} at +${t - T}`);
+  });
+
+  check("office life: coffee places, sofa seats, windows and conversation places hold one person at a time", () => {
+    const plan = planLife(busy, w, H);
+    const kitchen = building.floors.find((f) => f.hasKitchen)!.index;
+    const places = [0, 1, 2, 3].map((n) => WALK.coffee(kitchen, n));
+    places.push(...[0, 1, 2].map((n) => WALK.sofa(kitchen, n)));
+    for (const f of building.floors) if (f.kind === "office") places.push(...[0, 1, 2].map((n) => WALK.window(f.index, n)), ...[0, 1].flatMap((q) => [WALK.talk(f.index, q, 0), WALK.talk(f.index, q, 1)]));
+    let used = 0;
+    for (let t = T; t < H; t += 0.25) {
+      const poses = plan.plans.map((p) => sample(p.segs, t)).filter((x) => x.speed < 0.05);
+      for (const id of places) {
+        const at = walk.nodes.get(id)!.p;
+        const n = poses.filter((x) => Math.hypot(x.pos[0] - at[0], x.pos[1] - at[1], x.pos[2] - at[2]) < 0.15).length;
+        assert.ok(n <= 1, `${id} taken twice at +${t - T}`);
+        used += n;
+      }
+    }
+    assert.ok(used > 100, "places are actually used");
+    assert.ok(plan.plans.some((p) => p.cups.length > 0), "someone came back with a cup");
+    assert.ok(plan.plans.some((p) => p.segs.some((x) => x.act === "talk")), "someone talked");
+  });
+
+  check("office life: a short wait for the model keeps the agent at the desk", () => {
+    const log = (offset: number): Entry[] => {
+      const out: Entry[] = [];
+      for (let k = 0; k < 20; k++) out.push({ kind: k % 2 === offset ? "waiting_model" : "working", since: T + 1 + k * 15 });
+      return out;
+    };
+    const two: LifeInput[] = [0, 1].map((o) => ({ agentId: o + 1, floorIndex: 1, deskIndex: o, log: arrived(log(o)) }));
+    const plan = planLife(two, w, H);
+    for (let t = T + 1; t < T + 300; t += 0.5) two.forEach((a, i) => assert.ok(atSeat(a, sample(plan.plans[i].segs, t).pos), `agent ${a.agentId} left the desk at +${t - T}`));
+  });
+
+  check("office life: after a real change the agent is back at the desk within 30 s", () => {
+    const starts: Entry[][] = [
+      [],
+      [{ kind: "working", since: T + 1 }, { kind: "waiting_model", since: T + 3 }],
+      [{ kind: "working", since: T + 1 }, { kind: "waiting_review", since: T + 5 }],
+    ];
+    for (const [f, d] of [[1, 2], [2, 1]] as const)
+      for (const start of starts)
+        for (const change of [...Array.from({ length: 24 }, (_, k) => T + 3 + k * 0.5), ...Array.from({ length: 17 }, (_, k) => T + 20 + k * 23)]) {
+          const a: LifeInput = { agentId: 1, floorIndex: f, deskIndex: d, log: arrived([...start, { kind: "working", since: change }]) };
+          const others = busy.filter((o) => o.agentId !== 1 && !(o.floorIndex === f && o.deskIndex === d));
+          const plan = planLife([a, ...others], w, H).plans.find((p) => p.agentId === 1)!;
+          const back = sample(plan.segs, change + 30);
+          assert.ok(atSeat(a, back.pos) && back.sit > 0.99, `floor ${f} desk ${d}, ${start.at(-1)?.kind ?? "idle"} → working at +${change - T}: not back in 30 s`);
+        }
+  });
+
+  check("office life: walks follow the walking graph", () => {
+    const plan = planLife(busy, w, H);
+    const linked = new Set(walk.edges.flatMap((e) => [`${e.a}>${e.b}`, `${e.b}>${e.a}`]));
+    for (const p of plan.plans)
+      for (const seg of p.segs) {
+        const ids = seg.ids ?? [];
+        for (let i = 1; i < ids.length; i++) if (ids[i - 1] && ids[i] && ids[i - 1] !== ids[i]) assert.ok(linked.has(`${ids[i - 1]}>${ids[i]}`), `${ids[i - 1]} → ${ids[i]} is not an edge`);
+      }
+  });
+
+  check("office life: a departure starts where the agent is and still lasts exactly its duration", () => {
+    const lounge = planLife(busy, w, H).plans.find((p) => p.agentId === 4)!;
+    const tw = tripWorld(building, site, carRoutes(site), walk);
+    const leaveAt = T + 200;
+    const onSofa = sample(lounge.segs, leaveAt);
+    assert.equal(onSofa.act, "sofa");
+    const reviewer = { ...busy[3], log: [...busy[3].log, { kind: "leaving" as const, since: leaveAt }] };
+    const from = planLife([reviewer], w, H).plans[0].leave;
+    assert.ok(from?.seated, "leaves from the sofa");
+    const trip: TripInput = { agentId: 4, kind: "depart", start: leaveAt, floorIndex: 1, deskIndex: 3, spot: site.deskSpot(1, 3), from };
+    const [plan] = planTrips([trip], { arrive: 75, depart: 75 }, tw).plans;
+    assert.ok(Math.abs(plan.car.filter((x) => Number.isFinite(x.t1)).at(-1)!.t1 - (leaveAt + 75)) < 1e-6);
+    const first = sample(plan.person, leaveAt + 0.01).pos;
+    assert.ok(Math.hypot(first[0] - onSofa.pos[0], first[2] - onSofa.pos[2]) < 0.2, "the departure begins on the sofa");
   });
 }
 

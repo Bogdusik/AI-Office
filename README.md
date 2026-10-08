@@ -1,12 +1,12 @@
 # AI Office
 
-Local 3D office where AI agents are the staff. Stage 7a: the building from `GET /api/v1/state` with selection, panels and a HUD; a background executor drives agents (arrive → work through stages → review → leave) on a local model in Ollama, live over server-sent events. Agents with web access search and read pages (local SearXNG) and cite sources. Agents drive in, park, badge in, take the lift or the stairs to their desk, and leave the same way.
+Local 3D office where AI agents are the staff. Stage 7b: the building from `GET /api/v1/state` with selection, panels and a HUD; a background executor drives agents (arrive → work through stages → review → leave) on a local model in Ollama, live over server-sent events. Agents with web access search and read pages (local SearXNG) and cite sources. Agents drive in, park, badge in, take the lift or the stairs to their desk, and leave the same way. In between they type while the model writes for them, go for coffee when the model queue is long, wait for review in the lounge and chat when they are free — all from the real state, no generated dialogue.
 
 
 Controls: left drag — rotate, right drag — pan, wheel — zoom to cursor, «Домой» — back to the default view.
 Click an agent, a free desk, the director's office or a parking spot to open its panel; Esc closes the innermost layer. «Кабинет директора» opens the team table, review queue, profile and floor management.
 
-«Анимация» in the HUD turns the arrival/departure animation off (agents and cars then appear and disappear); «Следить» in an agent's panel makes the camera follow them.
+«Жизнь офиса» in the HUD switched off keeps everyone at their desks; «Анимация» off turns all movement off (agents and cars then appear and disappear); «Следить» in an agent's panel makes the camera follow them.
 
 Add `?preview=1` to the URL to see every agent at their desk and every car parked, without touching the database. `?routes=1` draws the car route graph.
 

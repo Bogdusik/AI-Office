@@ -13,6 +13,8 @@ export function FloorControls() {
   const requestHome = useUiStore((s) => s.requestHome);
   const animation = useUiStore((s) => s.animation);
   const setAnimation = useUiStore((s) => s.setAnimation);
+  const life = useUiStore((s) => s.life);
+  const setLife = useUiStore((s) => s.setLife);
 
   const numbers = (floors ?? []).map((f) => f.number).sort((a, b) => a - b);
   const options: { value: FloorSelection; label: string }[] = [
@@ -62,6 +64,17 @@ export function FloorControls() {
         >
           <span className={`h-2 w-2 rounded-full ${animation ? "bg-accent" : "bg-ink/25"}`} />
           Анимация
+        </button>
+        <button
+          type="button"
+          onClick={() => setLife(!life)}
+          aria-pressed={life}
+          disabled={!animation}
+          title={life ? "Сотрудники ходят за кофе, отдыхают и разговаривают" : "Сотрудники сидят за столами"}
+          className={`${pill} flex items-center gap-1.5 disabled:opacity-40 ${life && animation ? "text-ink/80 hover:bg-ink/5" : "text-ink/45 hover:bg-ink/5"}`}
+        >
+          <span className={`h-2 w-2 rounded-full ${life && animation ? "bg-accent" : "bg-ink/25"}`} />
+          Жизнь офиса
         </button>
     </div>
   );
