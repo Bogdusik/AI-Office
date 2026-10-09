@@ -8,7 +8,7 @@ import asyncio
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Protocol
+from typing import Any, Protocol
 
 from app.models.enums import CommentAuthor, RunProvider, TaskStage
 
@@ -83,7 +83,13 @@ ActivityStep = dict[str, object]
 
 
 class StageError(Exception):
-    """A failure whose message is meant for the director (stored as the run's error as is)."""
+    """A failure meant for the director. The interface translates `code` with `params` (`run.error_code`,
+    `run.error_params`); the English message is stored too (`run.error`: API, logs, clients without the code)."""
+
+    def __init__(self, message: str, code: str | None = None, params: dict[str, Any] | None = None) -> None:
+        super().__init__(message)
+        self.code = code
+        self.params: dict[str, Any] = params or {}
 
 
 class StageReport(Protocol):
@@ -137,7 +143,8 @@ FAKE_STEPS = 40
 
 
 class FakeWorker:
-    """Types a placeholder in Russian over `delay` seconds, word by word; marks its runs as provider `fake`."""
+    """Types a placeholder over `delay` seconds, word by word; marks its runs as provider `fake`. The placeholder
+    stands in for an agent's output, so it is in English like the agents write."""
 
     provider = RunProvider.FAKE
 
@@ -164,21 +171,21 @@ class FakeWorker:
         notes = "\n".join(f"- {body}" for body in director)
         match data.stage:
             case TaskStage.PLAN:
-                return f"План (заглушка) по задаче «{title}»:\n1. Разобрать условие.\n2. Собрать материалы.\n3. Написать черновик и проверить его."
+                return f"Plan (placeholder) for “{title}”:\n1. Read the task.\n2. Gather material.\n3. Write a draft and check it."
             case TaskStage.RESEARCH:
-                return "Исследование (заглушка): фальшивый исполнитель не ищет в сети, источники не собирались."
+                return "Research (placeholder): the fake executor does not search the web, no sources were collected."
             case TaskStage.DRAFT:
-                base = f"Черновик версии {data.version} (заглушка) по задаче «{title}»."
-                return f"{base}\nУчтены комментарии директора:\n{notes}" if director else base
+                base = f"Draft of version {data.version} (placeholder) for “{title}”."
+                return f"{base}\nDirector's comments taken into account:\n{notes}" if director else base
             case TaskStage.SELF_CHECK:
                 parts = [
                     f"# {title}",
-                    f"Результат, версия {data.version} — заглушка фальшивого исполнителя (EXECUTOR_WORKER=fake). "
-                    "Настоящий текст пишет локальная модель: EXECUTOR_WORKER=llm.",
+                    f"Result, version {data.version}: a placeholder from the fake executor (EXECUTOR_WORKER=fake). "
+                    "The local model writes the real text: EXECUTOR_WORKER=llm.",
                 ]
                 if data.task.description:
-                    parts.append(f"## Задача\n{data.task.description}")
+                    parts.append(f"## Task\n{data.task.description}")
                 if director:
-                    parts.append(f"## Учтённые комментарии директора\n{notes}")
-                parts.append(f"## Самопроверка\nЭтапов пройдено: {len(data.previous_stages) + 1}. Замечаний нет.")
+                    parts.append(f"## Director's comments taken into account\n{notes}")
+                parts.append(f"## Self-check\nStages done: {len(data.previous_stages) + 1}. No issues found.")
                 return "\n\n".join(parts)

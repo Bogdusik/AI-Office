@@ -62,7 +62,7 @@ class AgentState(BaseModel):
     release_blocked: ReleaseBlocker | None = None
     """Why the director cannot send the agent home now; None when they can."""
     leave_at: datetime | None = None
-    """Let go with «Отпустить всех», leaves at this time (people go one after another)."""
+    """Let go with «Release all», leaves at this time (people go one after another)."""
 
 
 class FloorState(BaseModel):

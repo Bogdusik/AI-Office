@@ -12,3 +12,6 @@ class LlmStatus(BaseModel):
     available: bool | None = None
     loaded: bool | None = None
     message: str | None = None
+    """In English; the interface shows `code` with `params` in its language."""
+    code: Literal["fake_worker", "ollama_down", "model_missing"] | None = None
+    params: dict[str, str] = {}

@@ -260,7 +260,11 @@ async def search_jobs(tools: JobTools, steps: StepLog, session: JobSession, args
         failures = outcome.failures if outcome else {"Job search": f"no answer within {tools.tool_timeout:g} s"}
         session.failures.update(failures)
         session.searches.append({"query": query, "location": location, "days": days, "found": {}, "shown": 0, "excluded": 0, "expired": 0, "failures": failures})
-        await steps.finish(step, "failed", "; ".join(failures.values()) or "источники недоступны")
+        reasons_text = "; ".join(failures.values())
+        if reasons_text:
+            await steps.finish(step, "failed", reasons_text, detail_code="sources_failed", detail_params={"reasons": reasons_text})
+        else:
+            await steps.finish(step, "failed", "sources unavailable", detail_code="sources_down")
         reasons = "; ".join(f"{k}: {v}" for k, v in failures.items())
         return f"ERROR: no job source answered ({reasons}). Continue without job search and say so in your notes."
 
@@ -282,8 +286,12 @@ async def search_jobs(tools: JobTools, steps: StepLog, session: JobSession, args
     session.searches.append(
         {"query": query, "location": location, "days": days, "found": found, "shown": len(shown), "excluded": excluded, "expired": expired, "failures": outcome.failures}
     )
-    detail = f"найдено {total}, исключено {excluded}" + (f", закрыто {expired}" if expired else "")
-    await steps.finish(step, "done", detail, found=total, excluded=excluded, expired=expired)
+    detail = f"found {total}, excluded {excluded}" + (f", closed {expired}" if expired else "")
+    await steps.finish(
+        step, "done", detail, found=total, excluded=excluded, expired=expired,
+        detail_code="jobs_found_closed" if expired else "jobs_found",
+        detail_params={"found": total, "excluded": excluded, "closed": expired},
+    )
 
     counts = ", ".join(f"{label} {n}" for label, n in found.items())
     lines = [
@@ -337,15 +345,22 @@ async def get_job(tools: JobTools, steps: StepLog, session: JobSession, args: Ma
     if found:
         entry.exclusions = found
         reasons = "; ".join(f'{e.reason} ("{e.phrase}")' for e in found)
-        await steps.finish(step, "done", f"недоступна: {found[0].reason}")
+        await steps.finish(
+            step, "done", f"not eligible: {found[0].reason}", detail_code="job_not_eligible", detail_params={"reason": found[0].reason}
+        )
         return f"ELIGIBILITY FILTER: {ref} is not eligible: {reasons}. Do not recommend it and do not mention it as an option."
     if entry.closed:
-        await steps.finish(step, "done", f"закрыта: {job.freshness_note}")
+        await steps.finish(
+            step, "done", f"closed: {job.freshness_note}", detail_code="job_closed", detail_params={"note": job.freshness_note}
+        )
         return f"CLOSED: {ref} is no longer open ({job.freshness_note}). Do not recommend it and do not mention it as an option."
     if not job.full:
-        await steps.finish(step, "failed", error or "полный текст недоступен")
+        if error:
+            await steps.finish(step, "failed", error, detail_code="job_unreadable", detail_params={"error": error})
+        else:
+            await steps.finish(step, "failed", "full text unavailable", detail_code="job_snippet_only")
         return f"Could not read the full advert of {ref} ({error or 'the source gives only a snippet'}). It is checked on the snippet only."
-    await steps.finish(step, "done", "полный текст прочитан")
+    await steps.finish(step, "done", "full text read", detail_code="job_read")
     text, _ = cut(job.description, tools.advert_chars)
     return "\n".join(
         [f'<job_advert job="{ref}" url="{_attr(job.url)}">', _line(entry), "", escape_tags(text), "</job_advert>"]

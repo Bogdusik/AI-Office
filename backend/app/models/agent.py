@@ -80,7 +80,7 @@ class Agent(Base):
     """Start of the departure the latest trip continues: a return (turned back on the way) or an arrival
     that came straight back from the map edge. None for an ordinary trip."""
     leave_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    """«Отпустить всех» lets people go one after another: this agent leaves at this time (the executor does it)."""
+    """«Release all» lets people go one after another: this agent leaves at this time (the executor does it)."""
     activity_log: Mapped[list[dict[str, str]]] = mapped_column(JSONB, default=list, server_default="[]")
     """Latest activities, oldest first: [{"kind": ActivityKind, "since": ISO time}], at most ACTIVITY_LOG_SIZE."""
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
