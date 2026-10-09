@@ -2,10 +2,12 @@
 
 import type { ReactNode } from "react";
 import { card } from "@/components/panels/ui";
+import { useT } from "@/lib/i18n";
 import { type HudBlock as BlockId, useUiStore } from "@/store/useUiStore";
 
 /** A HUD card that folds down to its title bar. */
 export function HudBlock({ id, title, extra, children, className = "" }: { id: BlockId; title: string; extra?: ReactNode; children: ReactNode; className?: string }) {
+  const t = useT();
   const collapsed = useUiStore((s) => s.collapsed[id]);
   const toggle = useUiStore((s) => s.toggle);
   return (
@@ -17,8 +19,8 @@ export function HudBlock({ id, title, extra, children, className = "" }: { id: B
           type="button"
           onClick={() => toggle(id)}
           aria-expanded={!collapsed}
-          aria-label={collapsed ? `Развернуть: ${title}` : `Свернуть: ${title}`}
-          title={collapsed ? "Развернуть" : "Свернуть"}
+          aria-label={collapsed ? t("common.expandBlock", { title }) : t("common.collapseBlock", { title })}
+          title={collapsed ? t("common.expand") : t("common.collapse")}
           className="grid h-6 w-6 place-items-center rounded-full text-ink/45 transition hover:bg-ink/5 hover:text-ink"
         >
           <svg viewBox="0 0 16 16" className={`h-3 w-3 transition ${collapsed ? "rotate-180" : ""}`} fill="none" stroke="currentColor" strokeWidth="2">

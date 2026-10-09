@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "check:layout": "node --experimental-strip-types --no-warnings --import ./scripts/register-ts.mjs scripts/check-layout.mts"
+    "check:layout": "node --experimental-strip-types --no-warnings --import ./scripts/register-ts.mjs scripts/check-layout.mts",
+    "check:i18n": "node --experimental-strip-types --no-warnings --import ./scripts/register-ts.mjs scripts/check-i18n.mts"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.9",

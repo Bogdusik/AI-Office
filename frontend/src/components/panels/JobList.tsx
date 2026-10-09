@@ -1,29 +1,33 @@
 "use client";
 
 import type { JobRow, JobsReport } from "@/lib/api";
+import { useT } from "@/lib/i18n";
 import { exclusionReason, freshnessNote } from "@/lib/labels";
 
 type Kind = "job" | "excluded" | "closed";
 
 function Freshness({ job }: { job: JobRow }) {
+  const t = useT();
   if (!job.freshness) return null;
-  const note = freshnessNote(job.freshness_note);
+  const note = freshnessNote(t, job.freshness_note);
   if (job.freshness === "open") {
     return (
       <p className="mt-0.5 text-signal-ok" data-freshness="open">
-        {note || "открыта"}
+        {note || t("jobs.open")}
       </p>
     );
   }
   return (
     <p className="mt-0.5 text-ink/50" data-freshness="unchecked" title={job.freshness_note}>
-      актуальность не проверена{note ? ` · ${note}` : ""}
+      {t("jobs.unchecked")}
+      {note ? ` · ${note}` : ""}
     </p>
   );
 }
 
 function Row({ job, kind }: { job: JobRow; kind: Kind }) {
-  const meta = [job.company, job.location, job.salary, job.posted ? `опубликована ${job.posted}` : null].filter(Boolean).join(" · ");
+  const t = useT();
+  const meta = [job.company, job.location, job.salary, job.posted ? t("jobs.posted", { date: job.posted }) : null].filter(Boolean).join(" · ");
   const extra = Object.entries(job.links ?? {}).filter(([, url]) => url !== job.url);
   const usable = kind === "job";
   return (
@@ -36,12 +40,12 @@ function Row({ job, kind }: { job: JobRow; kind: Kind }) {
         <a href={job.url} target="_blank" rel="noopener noreferrer" className="min-w-0 flex-1 font-medium text-accent underline-offset-2 hover:underline" title={job.url}>
           {job.title || job.url}
         </a>
-        {usable && <span className="shrink-0 text-[10px] text-ink/40">{job.full ? "полный текст" : "по фрагменту"}</span>}
+        {usable && <span className="shrink-0 text-[10px] text-ink/40">{job.full ? t("jobs.fullText") : t("jobs.snippet")}</span>}
       </div>
       {meta && <p className="mt-0.5 text-ink/60">{meta}</p>}
       {extra.length > 0 && (
         <p className="mt-0.5 text-ink/45">
-          также:{" "}
+          {t("jobs.also")}{" "}
           {extra.map(([source, url]) => (
             <a key={source} href={url} target="_blank" rel="noopener noreferrer" className="mr-2 text-accent hover:underline">
               {source}
@@ -53,12 +57,12 @@ function Row({ job, kind }: { job: JobRow; kind: Kind }) {
       {kind === "excluded" &&
         job.exclusions.map((e) => (
           <p key={e.reason} className="mt-1 text-ink/75">
-            <span className="font-medium text-signal-down">{exclusionReason(e.reason)}</span> · «{e.phrase}»
+            <span className="font-medium text-signal-down">{exclusionReason(t, e.reason)}</span> · {t("common.quoted", { text: e.phrase })}
           </p>
         ))}
       {kind === "closed" && (
         <p className="mt-1 text-ink/75" title={job.freshness_note}>
-          <span className="font-medium">Закрыта</span> · {freshnessNote(job.freshness_note)}
+          <span className="font-medium">{t("jobs.closed")}</span> · {freshnessNote(t, job.freshness_note)}
         </p>
       )}
     </li>
@@ -83,6 +87,7 @@ function Group({ title, rows, kind, testId }: { title: string; rows: JobRow[]; k
 
 /** Vacancies behind a result: the ones the agent could use and, separately, the ones the hard filter excluded and the closed ones. */
 export function JobList({ report }: { report: JobsReport }) {
+  const t = useT();
   const failures = Object.entries(report.failures ?? {});
   const expired = report.expired ?? [];
   const closedTask = (report.task_pages ?? []).filter((p) => p.freshness === "expired");
@@ -92,24 +97,23 @@ export function JobList({ report }: { report: JobsReport }) {
     <div className="flex flex-col gap-2" data-testid="job-list">
       {report.task_flags.length > 0 && (
         <p className="rounded-lg border border-signal-down/30 bg-signal-down/8 px-3 py-2 text-xs text-ink" data-testid="job-verdict">
-          <span className="font-semibold">Вакансия недоступна, заявка не готовится:</span>{" "}
-          {report.task_flags.map((f) => `${exclusionReason(f.reason)} («${f.phrase}»)`).join("; ")}
+          <span className="font-semibold">{t("jobs.verdictIneligible")}</span> {report.task_flags.map((f) => `${exclusionReason(t, f.reason)} (${t("common.quoted", { text: f.phrase })})`).join("; ")}
         </p>
       )}
       {!report.task_flags.length && closedTask.length > 0 && (
         <p className="rounded-lg border border-line bg-ink/[0.03] px-3 py-2 text-xs text-ink" data-testid="job-verdict">
-          <span className="font-semibold">Вакансия закрыта, заявка не готовится:</span> {closedTask.map((p) => freshnessNote(p.note)).join("; ")}
+          <span className="font-semibold">{t("jobs.verdictClosed")}</span> {closedTask.map((p) => freshnessNote(t, p.note)).join("; ")}
         </p>
       )}
       {uncheckedTask.map((p) => (
         <p key={p.url} className="text-[11px] text-ink/50" title={p.note}>
-          Актуальность вакансии из задачи не проверена · {freshnessNote(p.note)}
+          {t("jobs.taskUnchecked")} · {freshnessNote(t, p.note)}
         </p>
       ))}
-      <Group title="Вакансии" rows={report.jobs} kind="job" />
-      <Group title="Недоступны" rows={report.excluded} kind="excluded" testId="job-excluded" />
+      <Group title={t("jobs.jobs")} rows={report.jobs} kind="job" />
+      <Group title={t("jobs.excluded")} rows={report.excluded} kind="excluded" testId="job-excluded" />
       {report.summary && <p className="text-[11px] text-ink/50">{report.summary}</p>}
-      <Group title="Закрыты" rows={expired} kind="closed" testId="job-closed" />
+      <Group title={t("jobs.closedGroup")} rows={expired} kind="closed" testId="job-closed" />
       {failures.map(([source, why]) => (
         <p key={source} className="text-[11px] text-signal-down">
           {source}: {why}

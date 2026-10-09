@@ -1,12 +1,14 @@
 "use client";
 
 import type { Task } from "@/lib/api";
-import { TASK_STAGE, TASK_STATUS } from "@/lib/labels";
+import { useT } from "@/lib/i18n";
+import { stageName, taskTag } from "@/lib/labels";
 import { formatDate } from "./ui";
 
 export function TaskRow({ task, onOpen, meta, active }: { task: Task; onOpen: () => void; meta?: string; active?: boolean }) {
-  const s = TASK_STATUS[task.status];
-  const detail = meta ?? (task.stage ? TASK_STAGE[task.stage] : task.finished_at ? formatDate(task.finished_at) : null);
+  const t = useT();
+  const s = taskTag(t, task.status);
+  const detail = meta ?? (task.stage ? stageName(t, task.stage) : task.finished_at ? formatDate(task.finished_at) : null);
   return (
     <button
       type="button"

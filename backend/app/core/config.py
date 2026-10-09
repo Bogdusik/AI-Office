@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     """A return lasts the time already spent leaving plus this (the worst case is turning just after the lift
     doors closed: down to the next stop and back up; measured in `check:layout`)."""
     executor_release_gap_seconds: float = 5.0
-    """«Отпустить всех» sends people home this far apart, so the cars get through the exit barrier in time."""
+    """«Release all» sends people home this far apart, so the cars get through the exit barrier in time."""
     executor_tick_seconds: float = 1.0
     executor_worker: Literal["fake", "llm"] = "fake"
     executor_progress_seconds: float = 1.0

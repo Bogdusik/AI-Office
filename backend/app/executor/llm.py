@@ -53,7 +53,12 @@ class StageTimeout(StageError):
 
 
 class _Retryable(Exception):
-    pass
+    """A failure worth one more try; becomes a `StageError` with the same code (plus `attempts`) when tries run out."""
+
+    def __init__(self, message: str, code: str, params: dict[str, Any] | None = None) -> None:
+        super().__init__(message)
+        self.code = code
+        self.params: dict[str, Any] = params or {}
 
 
 class _ContextFull(Exception):
@@ -112,7 +117,7 @@ class LlmWorker:
         messages = build_messages(data, num_ctx=s.num_ctx, reserve_tokens=self.reserve_for(data), today=date.today())
         turn = await self.generate(model, messages, report)
         if not turn.content:
-            raise StageError("Модель вернула пустой ответ")
+            raise StageError("The model returned an empty answer", "empty_answer")
         text = strip_service_lines(turn.content) if data.stage in DELIVERABLE_STAGES else turn.content
         if data.stage == TaskStage.SELF_CHECK:
             text = finalize(text, data.jobs)
@@ -157,13 +162,17 @@ class LlmWorker:
                                 raise self._context_error(again) from None
                 except TimeoutError:
                     failure: StageError = StageTimeout(
-                        f"Модель «{model}» не ответила за {limit:g} с (попыток: {attempt})."
+                        f"Model “{model}” did not answer within {limit:g} s (attempts: {attempt}).",
+                        "model_timeout",
+                        {"model": model, "seconds": limit, "attempts": attempt},
                     )
                 except _Retryable as err:
-                    failure = StageError(f"{err} (попыток: {attempt})")
+                    failure = StageError(f"{err} (attempts: {attempt})", err.code, {**err.params, "attempts": attempt})
                 except httpx.ConnectError:
                     failure = OllamaUnavailable(
-                        f"Ollama не отвечает по адресу {s.url}. Запустите Ollama и повторите задачу."
+                        f"Ollama is not answering at {s.url}. Start Ollama and retry the task.",
+                        "ollama_unavailable",
+                        {"url": s.url},
                     )
                 if attempt == attempts:
                     raise failure
@@ -172,11 +181,13 @@ class LlmWorker:
 
     def _context_error(self, full: _ContextFull) -> StageError:
         s = self.settings
-        where = "на размышления, текст ответа не начат" if full.thought else "до текста ответа"
+        where = "on thinking, before any answer text" if full.thought else "before the answer text"
         return StageError(
-            f"Ответ не поместился в окно контекста модели ({s.num_ctx} токенов): вход {full.prompt_tokens} токенов, "
-            f"ещё {full.output_tokens} ушло {where}. Сократите описание или комментарии задачи "
-            "или увеличьте OLLAMA_NUM_CTX в backend/.env."
+            f"The answer did not fit into the model's context window ({s.num_ctx} tokens): {full.prompt_tokens} "
+            f"tokens of input, another {full.output_tokens} went {where}. Shorten the task description or comments "
+            "or raise OLLAMA_NUM_CTX in backend/.env.",
+            "context_full_thinking" if full.thought else "context_full",
+            {"num_ctx": s.num_ctx, "input": full.prompt_tokens, "output": full.output_tokens},
         )
 
     async def _chat(
@@ -204,19 +215,29 @@ class LlmWorker:
             try:
                 async with client.stream("POST", "/api/chat", json=body) as response:
                     if response.status_code == 404:
-                        raise ModelMissing(f"Модель «{model}» не скачана в Ollama. Выполните: ollama pull {model}")
+                        raise ModelMissing(
+                            f"Model “{model}” is not downloaded in Ollama. Run: ollama pull {model}", "model_missing", {"model": model}
+                        )
                     if response.status_code >= 500:
                         detail = (await response.aread()).decode(errors="replace")[:300]
-                        raise _Retryable(f"Ollama вернула ошибку {response.status_code}: {detail}")
+                        raise _Retryable(
+                            f"Ollama returned an error {response.status_code}: {detail}",
+                            "ollama_error",
+                            {"status": response.status_code, "detail": detail},
+                        )
                     if response.status_code >= 400:
                         detail = (await response.aread()).decode(errors="replace")[:300]
-                        raise StageError(f"Ollama отклонила запрос ({response.status_code}): {detail}")
+                        raise StageError(
+                            f"Ollama rejected the request ({response.status_code}): {detail}",
+                            "ollama_rejected",
+                            {"status": response.status_code, "detail": detail},
+                        )
                     async for line in response.aiter_lines():
                         if not line.strip():
                             continue
                         chunk = json.loads(line)
                         if "error" in chunk:
-                            raise _Retryable(f"Ollama: {chunk['error']}")
+                            raise _Retryable(f"Ollama: {chunk['error']}", "ollama_stream_error", {"error": str(chunk["error"])})
                         message = chunk.get("message") or {}
                         thought = thought or bool(message.get("thinking"))
                         if message.get("content"):
@@ -235,13 +256,15 @@ class LlmWorker:
                                 if chunk.get("done_reason") == "length" or used >= s.num_ctx - 8:
                                     raise _ContextFull(turn.input_tokens, turn.output_tokens, thought)
                                 raise _Retryable(
-                                    f"Модель закончила ответ, не написав текста (вход {turn.input_tokens} токенов, "
-                                    f"вывод {turn.output_tokens}{', только размышления' if thought else ''})"
+                                    f"The model finished without writing any text ({turn.input_tokens} tokens of input, "
+                                    f"{turn.output_tokens} of output{', thinking only' if thought else ''})",
+                                    "no_text_thinking" if thought else "no_text",
+                                    {"input": turn.input_tokens, "output": turn.output_tokens},
                                 )
                             return turn
             except (httpx.ReadError, httpx.RemoteProtocolError, httpx.WriteError) as err:
-                raise _Retryable(f"Соединение с Ollama оборвалось: {err}") from err
-        raise _Retryable("Ollama закрыла поток, не завершив ответ")
+                raise _Retryable(f"The connection to Ollama broke: {err}", "connection_lost", {"error": str(err)}) from err
+        raise _Retryable("Ollama closed the stream before finishing the answer", "stream_closed")
 
 
 DELIVERABLE_STAGES = frozenset({TaskStage.DRAFT, TaskStage.SELF_CHECK})

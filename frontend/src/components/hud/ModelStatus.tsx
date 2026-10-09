@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { type LlmStatus, api } from "@/lib/api";
+import { useT } from "@/lib/i18n";
 
 const POLL_MS = 10_000;
 
@@ -14,6 +15,7 @@ const DOT = {
 
 /** HUD dot for the model: green — ready, red — Ollama down or model missing, grey — fake worker. */
 export function ModelStatus() {
+  const t = useT();
   const [status, setStatus] = useState<LlmStatus | null>(null);
   const [failed, setFailed] = useState(false);
 
@@ -39,8 +41,9 @@ export function ModelStatus() {
   }, []);
 
   const state = failed ? "checking" : !status ? "checking" : status.worker === "fake" ? "fake" : status.ok ? "ok" : "down";
-  const label = status?.worker === "fake" ? "fake" : (status?.model ?? "модель");
-  const title = status?.message ?? (status?.loaded ? "Модель загружена в видеопамять" : status?.ok ? "Модель скачана, загрузится при первом запросе" : "Проверка модели…");
+  const label = status?.worker === "fake" ? "fake" : (status?.model ?? t("modelStatus.model"));
+  const message = status?.code ? t(`modelStatus.${status.code}`, status.params ?? {}) : status?.message;
+  const title = message ?? (status?.loaded ? t("modelStatus.loaded") : status?.ok ? t("modelStatus.downloaded") : t("modelStatus.checking"));
 
   return (
     <div
@@ -51,7 +54,7 @@ export function ModelStatus() {
     >
       <span className={`h-2 w-2 rounded-full ${DOT[state]}`} />
       {label}
-      {state === "down" && <span className="font-sans text-[11px] text-signal-down">{status?.ollama === false ? "Ollama не отвечает" : "нет модели"}</span>}
+      {state === "down" && <span className="font-sans text-[11px] text-signal-down">{status?.ollama === false ? t("modelStatus.ollamaDown") : t("modelStatus.noModel")}</span>}
     </div>
   );
 }

@@ -1,13 +1,14 @@
 import type { TaskStage, TaskStatus } from "@/lib/api";
 
+/** Ribbon steps: a task status or a work stage; labels come from `taskStatus` / `taskStage` in the dictionaries. */
 export const RIBBON = [
-  { id: "queued", label: "В очереди" },
-  { id: "plan", label: "План" },
-  { id: "research", label: "Исследование" },
-  { id: "draft", label: "Черновик" },
-  { id: "self_check", label: "Самопроверка" },
-  { id: "needs_review", label: "На проверке" },
-  { id: "done", label: "Готово" },
+  { id: "queued", kind: "status" },
+  { id: "plan", kind: "stage" },
+  { id: "research", kind: "stage" },
+  { id: "draft", kind: "stage" },
+  { id: "self_check", kind: "stage" },
+  { id: "needs_review", kind: "status" },
+  { id: "done", kind: "status" },
 ] as const;
 
 const WORK_STAGES: TaskStage[] = ["plan", "research", "draft", "self_check"];

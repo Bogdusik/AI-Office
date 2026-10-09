@@ -150,7 +150,9 @@ async def test_closed_jobs_are_not_shown_and_the_result_lists_them_apart() -> No
     assert research.jobs is not None
     assert [(j["company"], j["freshness"]) for j in research.jobs["jobs"]] == [("Kestrel Payments", UNCHECKED), ("Brightline Health", OPEN)]
     assert [(j["ref"], j["company"]) for j in research.jobs["expired"]] == [("X1", "Fernhill")]
-    assert (report.steps[-1][0]["found"], report.steps[-1][0]["expired"], report.steps[-1][0]["detail"]) == (3, 1, "найдено 3, исключено 0, закрыто 1")
+    step = report.steps[-1][0]
+    assert (step["found"], step["expired"], step["detail"]) == (3, 1, "found 3, excluded 0, closed 1")
+    assert (step["detail_code"], step["detail_params"]) == ("jobs_found_closed", {"found": 3, "excluded": 0, "closed": 1})
     assert CLOSED_HEADING in research.text
 
     kestrel, brightline = (j["url"] for j in research.jobs["jobs"])
@@ -178,7 +180,8 @@ async def test_get_job_finds_out_that_a_job_was_removed() -> None:
     assert first == "CLOSED: J1 is no longer open (Reed no longer lists it). Do not recommend it and do not mention it as an option."
     assert again == "CLOSED: J1 is no longer open (Reed no longer lists it). Do not recommend it."
     assert out.jobs is not None and out.jobs["jobs"] == [] and out.jobs["expired"][0]["ref"] == "J1"
-    assert report.steps[-1][1]["detail"] == "закрыта: Reed no longer lists it"
+    assert report.steps[-1][1]["detail"] == "closed: Reed no longer lists it"
+    assert (report.steps[-1][1]["detail_code"], report.steps[-1][1]["detail_params"]) == ("job_closed", {"note": "Reed no longer lists it"})
 
 
 async def test_a_listing_closed_on_one_site_closes_the_vacancy_listed_on_another() -> None:

@@ -3,7 +3,8 @@
 import { type FormEvent, useMemo, useState } from "react";
 import { type FloorState, type Profile, type ProfileUpdate, api } from "@/lib/api";
 import { humanize } from "@/lib/errors";
-import { TASK_STAGE, TASK_STATUS, agentTag } from "@/lib/labels";
+import { type Key, useT } from "@/lib/i18n";
+import { TASK_STATUS_COLOR, agentTag, stageName, taskTag } from "@/lib/labels";
 import { useAction } from "@/lib/useAction";
 import { useFetched } from "@/lib/useFetched";
 import { allAgents, findAgent } from "@/lib/world";
@@ -27,21 +28,24 @@ function useGoToAgent() {
   };
 }
 
-/** «Отпустить всех»: everyone in the office with nothing to work on goes home, one after another. */
+/** «Release all»: everyone in the office with nothing to work on goes home, one after another. */
 function ReleaseAll({ agents }: { agents: ReturnType<typeof allAgents> }) {
+  const t = useT();
   const { busy, error, run } = useAction();
   const free = agents.filter(({ agent }) => agent.release_blocked === null && !agent.leave_at).length;
   const busyOnes = agents.filter(({ agent }) => agent.release_blocked === "tasks").length;
   const hint = free
-    ? `Уедут: ${free}${busyOnes ? `, останутся с задачами: ${busyOnes}` : ""}`
+    ? busyOnes
+      ? t("director.willLeaveBusy", { count: free, busy: busyOnes })
+      : t("director.willLeave", { count: free })
     : busyOnes
-      ? "Некого отпускать: у всех в офисе есть задачи в работе, в очереди или на доработке"
-      : "Некого отпускать: в офисе никого нет";
+      ? t("director.nobodyBusy")
+      : t("director.nobodyHere");
   return (
     <div className="flex flex-wrap items-center gap-3">
       <span title={free ? undefined : hint}>
         <Button onClick={() => run("release-all", () => api.releaseAll())} disabled={!free} busy={busy === "release-all"} data-testid="release-all">
-          Отпустить всех{free ? ` (${free})` : ""}
+          {free ? t("director.releaseAllCount", { count: free }) : t("director.releaseAll")}
         </Button>
       </span>
       <span className="text-xs text-ink/55" data-testid="release-all-hint">
@@ -53,29 +57,31 @@ function ReleaseAll({ agents }: { agents: ReturnType<typeof allAgents> }) {
 }
 
 function Team() {
+  const t = useT();
   const world = useWorldStore((s) => s.world);
   const go = useGoToAgent();
   const rows = allAgents(world);
-  if (!rows.length) return <Empty>В офисе пока никого нет.</Empty>;
+  if (!rows.length) return <Empty>{t("director.nobodyYet")}</Empty>;
   const th = "px-4 py-2.5 font-medium";
   return (
     <div className="overflow-hidden rounded-xl border border-line bg-white">
       <table className="w-full text-sm" data-testid="team-table">
         <thead className="bg-paper/70 text-left text-xs text-ink/50">
           <tr>
-            <th className={th}>Сотрудник</th>
-            <th className={th}>Этаж</th>
-            <th className={th}>Статус</th>
-            <th className={th}>Текущая задача</th>
-            <th className={th}>Этап</th>
-            <th className={`${th} text-right`}>Очередь</th>
-            <th className={`${th} text-right`}>Ждёт проверки</th>
+            <th className={th}>{t("director.colAgent")}</th>
+            <th className={th}>{t("director.colFloor")}</th>
+            <th className={th}>{t("director.colStatus")}</th>
+            <th className={th}>{t("director.colTask")}</th>
+            <th className={th}>{t("director.colStage")}</th>
+            <th className={`${th} text-right`}>{t("director.colQueue")}</th>
+            <th className={`${th} text-right`}>{t("director.colReview")}</th>
           </tr>
         </thead>
         <tbody>
           {rows.map(({ agent, floor }) => {
-            const s = agentTag(agent);
-            const t = agent.current_task;
+            const s = agentTag(t, agent);
+            const task = agent.current_task;
+            const ts = task ? taskTag(t, task.status) : null;
             return (
               <tr key={agent.id} onClick={() => go(agent.id, floor.number)} className="cursor-pointer border-t border-line transition hover:bg-accent/5">
                 <td className="px-4 py-2.5">
@@ -89,18 +95,18 @@ function Team() {
                   <Pill label={s.label} color={s.color} size="xs" />
                 </td>
                 <td className="max-w-72 px-4 py-2.5">
-                  {t ? (
+                  {task && ts ? (
                     <div className="flex flex-col gap-0.5">
-                      <span className="truncate text-ink">{t.title}</span>
-                      <span className="text-xs" style={{ color: TASK_STATUS[t.status].color }}>
-                        {TASK_STATUS[t.status].label}
+                      <span className="truncate text-ink">{task.title}</span>
+                      <span className="text-xs" style={{ color: ts.color }}>
+                        {ts.label}
                       </span>
                     </div>
                   ) : (
                     <span className="text-ink/35">—</span>
                   )}
                 </td>
-                <td className="px-4 py-2.5 text-ink/70">{t?.stage ? TASK_STAGE[t.stage] : "—"}</td>
+                <td className="px-4 py-2.5 text-ink/70">{task?.stage ? stageName(t, task.stage) : "—"}</td>
                 <td className="px-4 py-2.5 text-right font-mono">{agent.queue_length}</td>
                 <td className={`px-4 py-2.5 text-right font-mono ${agent.awaiting_review ? "font-semibold text-[#6b4fd6]" : ""}`}>{agent.awaiting_review}</td>
               </tr>
@@ -113,14 +119,15 @@ function Team() {
 }
 
 function Review() {
+  const t = useT();
   const world = useWorldStore((s) => s.world);
   const tasks = useTasksStore((s) => s.tasks);
   const go = useGoToAgent();
-  const waiting = tasks.filter((t) => t.status === "needs_review").flatMap((t) => {
-    const located = findAgent(world, t.agent_id);
-    return located ? [{ task: t, ...located }] : [];
+  const waiting = tasks.filter((task) => task.status === "needs_review").flatMap((task) => {
+    const located = findAgent(world, task.agent_id);
+    return located ? [{ task, ...located }] : [];
   });
-  if (!waiting.length) return <Empty>Ничего не ждёт вашей проверки.</Empty>;
+  if (!waiting.length) return <Empty>{t("director.nothingToReview")}</Empty>;
   return (
     <ul className="flex flex-col gap-2" data-testid="review-list">
       {waiting.map(({ task, agent, floor }) => (
@@ -130,12 +137,10 @@ function Review() {
             onClick={() => go(agent.id, floor.number, task.id)}
             className="flex w-full items-center gap-4 rounded-xl border border-line bg-white px-4 py-3 text-left transition hover:border-accent"
           >
-            <span className="h-9 w-1 rounded-full" style={{ backgroundColor: TASK_STATUS.needs_review.color }} />
+            <span className="h-9 w-1 rounded-full" style={{ backgroundColor: TASK_STATUS_COLOR.needs_review }} />
             <span className="min-w-0 flex-1">
               <span className="block truncate font-medium text-ink">{task.title}</span>
-              <span className="text-xs text-ink/50">
-                {agent.title} · {agent.name} · этаж {floor.number}
-              </span>
+              <span className="text-xs text-ink/50">{t("director.reviewFloor", { title: agent.title, name: agent.name, floor: floor.number })}</span>
             </span>
             <span className="text-xs text-ink/45">{formatDate(task.created_at)}</span>
           </button>
@@ -145,14 +150,15 @@ function Review() {
   );
 }
 
-const PROFILE_FIELDS: { key: keyof ProfileUpdate; label: string; hint: string; rows: number }[] = [
-  { key: "summary", label: "Кто я", hint: "Опыт, навыки, контекст — сотрудники учитывают это в каждой задаче", rows: 4 },
-  { key: "goal", label: "Цель", hint: "Чего вы добиваетесь сейчас", rows: 3 },
-  { key: "constraints", label: "Ограничения", hint: "Чего делать нельзя, сроки, рамки", rows: 3 },
-  { key: "notes", label: "Заметки", hint: "Всё остальное", rows: 4 },
+const PROFILE_FIELDS: { key: keyof ProfileUpdate; label: Key; hint: Key; rows: number }[] = [
+  { key: "summary", label: "director.summary", hint: "director.summaryHint", rows: 4 },
+  { key: "goal", label: "director.goal", hint: "director.goalHint", rows: 3 },
+  { key: "constraints", label: "director.constraints", hint: "director.constraintsHint", rows: 3 },
+  { key: "notes", label: "director.notes", hint: "director.notesHint", rows: 4 },
 ];
 
 function ProfileForm({ initial }: { initial: Profile }) {
+  const t = useT();
   const [form, setForm] = useState<ProfileUpdate>(() => {
     const { name, summary, goal, constraints, notes } = initial;
     return { name, summary, goal, constraints, notes };
@@ -168,22 +174,22 @@ function ProfileForm({ initial }: { initial: Profile }) {
   };
 
   return (
-    <form onSubmit={submit} className="flex max-w-3xl flex-col gap-4" aria-label="Профиль директора">
-      <Field label="Имя">
+    <form onSubmit={submit} className="flex max-w-3xl flex-col gap-4" aria-label={t("director.profileForm")}>
+      <Field label={t("director.name")}>
         <input className={inputCls} name="name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} maxLength={200} />
       </Field>
       {PROFILE_FIELDS.map((f) => (
-        <Field key={f.key} label={f.label} hint={f.hint}>
+        <Field key={f.key} label={t(f.label)} hint={t(f.hint)}>
           <textarea className={`${inputCls} resize-y`} name={f.key} rows={f.rows} value={form[f.key]} onChange={(e) => setForm({ ...form, [f.key]: e.target.value })} />
         </Field>
       ))}
       <ErrorNote text={error} />
       <div className="flex items-center justify-end gap-3">
         <span className="text-xs text-ink/45" data-testid="profile-saved">
-          {dirty ? "Есть несохранённые изменения" : `Сохранено ${formatDate(base.updated_at)}`}
+          {dirty ? t("director.unsaved") : t("director.saved", { date: formatDate(base.updated_at) })}
         </span>
         <Button type="submit" variant="primary" busy={busy === "save"} disabled={!dirty}>
-          Сохранить профиль
+          {t("director.saveProfile")}
         </Button>
       </div>
     </form>
@@ -191,16 +197,19 @@ function ProfileForm({ initial }: { initial: Profile }) {
 }
 
 function ProfileTab() {
+  const t = useT();
   const { data, error } = useFetched((signal) => api.profile(signal), []);
-  if (error) return <ErrorNote text={humanize(error)} />;
-  if (!data) return <p className="text-sm text-ink/50">Загрузка…</p>;
+  if (error) return <ErrorNote text={humanize(t, error)} />;
+  if (!data) return <p className="text-sm text-ink/50">{t("common.loading")}</p>;
   return <ProfileForm initial={data} />;
 }
 
 function FloorRow({ floor }: { floor: FloorState }) {
+  const t = useT();
   const { busy, error, run } = useAction();
   const deletable = floor.kind === "office" && floor.agents.length === 0 && !floor.has_director_office;
-  const why = floor.kind === "reception" ? "Ресепшен" : floor.has_director_office ? "Кабинет директора" : floor.agents.length ? "Есть сотрудники" : null;
+  const why =
+    floor.kind === "reception" ? t("director.reception") : floor.has_director_office ? t("director.directorOffice") : floor.agents.length ? t("director.hasAgents") : null;
   return (
     <li className="flex flex-col gap-2 rounded-xl border border-line bg-white px-4 py-3" data-floor={floor.number}>
       <div className="flex items-center gap-4">
@@ -208,11 +217,16 @@ function FloorRow({ floor }: { floor: FloorState }) {
         <div className="min-w-0 flex-1">
           <div className="font-medium text-ink">{floor.name}</div>
           <div className="text-xs text-ink/50">
-            {floor.kind === "reception" ? "Ресепшен, без рабочих мест" : `Мест: ${floor.capacity} · занято: ${floor.agents.length}`}
+            {floor.kind === "reception" ? t("director.receptionNoDesks") : t("director.desks", { capacity: floor.capacity, taken: floor.agents.length })}
           </div>
         </div>
         {deletable ? (
-          <ConfirmButton label="Удалить" question={`Удалить этаж ${floor.number}?`} busy={busy === "delete"} onConfirm={() => run("delete", () => api.deleteFloor(floor.id))} />
+          <ConfirmButton
+            label={t("director.delete")}
+            question={t("director.deleteQuestion", { number: floor.number })}
+            busy={busy === "delete"}
+            onConfirm={() => run("delete", () => api.deleteFloor(floor.id))}
+          />
         ) : (
           <span className="text-xs text-ink/35">{why}</span>
         )}
@@ -223,6 +237,7 @@ function FloorRow({ floor }: { floor: FloorState }) {
 }
 
 function Floors() {
+  const t = useT();
   const floors = useWorldStore((s) => s.world?.floors ?? []);
   const [name, setName] = useState("");
   const [capacity, setCapacity] = useState(5);
@@ -242,12 +257,12 @@ function Floors() {
           <FloorRow key={f.id} floor={f} />
         ))}
       </ul>
-      <form onSubmit={submit} className="flex h-fit flex-col gap-3 rounded-xl border border-line bg-white p-4" aria-label="Добавить этаж">
-        <h3 className="text-sm font-semibold text-ink">Новый этаж № {next}</h3>
-        <Field label="Название">
-          <input className={inputCls} name="floor-name" value={name} onChange={(e) => setName(e.target.value)} maxLength={100} placeholder="Например, Research" />
+      <form onSubmit={submit} className="flex h-fit flex-col gap-3 rounded-xl border border-line bg-white p-4" aria-label={t("director.addFloorForm")}>
+        <h3 className="text-sm font-semibold text-ink">{t("director.newFloor", { number: next })}</h3>
+        <Field label={t("director.floorName")}>
+          <input className={inputCls} name="floor-name" value={name} onChange={(e) => setName(e.target.value)} maxLength={100} placeholder={t("director.floorNamePlaceholder")} />
         </Field>
-        <Field label="Вместимость" hint={`Рабочих мест, от 1 до ${MAX_CAPACITY}`}>
+        <Field label={t("director.capacity")} hint={t("director.capacityHint", { max: MAX_CAPACITY })}>
           <input
             className={`${inputCls} font-mono`}
             name="capacity"
@@ -260,18 +275,18 @@ function Floors() {
         </Field>
         <ErrorNote text={error} />
         <Button type="submit" variant="primary" busy={busy === "add"} disabled={!name.trim()}>
-          Добавить этаж
+          {t("director.addFloor")}
         </Button>
       </form>
     </div>
   );
 }
 
-const TABS: { id: Tab; label: string }[] = [
-  { id: "team", label: "Команда" },
-  { id: "review", label: "Ждут моей проверки" },
-  { id: "profile", label: "Профиль" },
-  { id: "floors", label: "Этажи" },
+const TABS: { id: Tab; label: Key }[] = [
+  { id: "team", label: "director.team" },
+  { id: "review", label: "director.review" },
+  { id: "profile", label: "director.profile" },
+  { id: "floors", label: "director.floors" },
 ];
 
 export function DirectorPanel() {
@@ -280,9 +295,10 @@ export function DirectorPanel() {
 }
 
 function DirectorView() {
+  const t = useT();
   const back = useUiStore((s) => s.back);
   const world = useWorldStore((s) => s.world);
-  const reviewCount = useTasksStore((s) => s.tasks.filter((t) => t.status === "needs_review" && findAgent(world, t.agent_id)).length);
+  const reviewCount = useTasksStore((s) => s.tasks.filter((task) => task.status === "needs_review" && findAgent(world, task.agent_id)).length);
   const [tab, setTab] = useState<Tab>("team");
   const agents = allAgents(world);
 
@@ -292,26 +308,26 @@ function DirectorView() {
         data-testid="director-panel"
         className={`${card} flex h-full flex-col overflow-hidden bg-paper/97`}
         onClick={(e) => e.stopPropagation()}
-        aria-label="Кабинет директора"
+        aria-label={t("director.eyebrow")}
       >
         <header className="flex items-center gap-6 border-b border-line px-6 py-4">
           <div>
-            <Eyebrow>Кабинет директора</Eyebrow>
-            <h2 className="mt-0.5 text-xl font-semibold tracking-tight text-ink">Управление офисом</h2>
+            <Eyebrow>{t("director.eyebrow")}</Eyebrow>
+            <h2 className="mt-0.5 text-xl font-semibold tracking-tight text-ink">{t("director.title")}</h2>
           </div>
           <nav className="flex gap-1 rounded-full border border-line bg-white p-1" role="tablist">
-            {TABS.map((t) => (
+            {TABS.map((item) => (
               <button
-                key={t.id}
+                key={item.id}
                 type="button"
                 role="tab"
-                aria-selected={tab === t.id}
-                onClick={() => setTab(t.id)}
-                className={`flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-medium transition ${tab === t.id ? "bg-ink text-paper" : "text-ink/65 hover:bg-ink/5"}`}
+                aria-selected={tab === item.id}
+                onClick={() => setTab(item.id)}
+                className={`flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-medium transition ${tab === item.id ? "bg-ink text-paper" : "text-ink/65 hover:bg-ink/5"}`}
               >
-                {t.label}
-                {t.id === "review" && reviewCount > 0 && <span className="rounded-full bg-[#8b6cf0] px-1.5 font-mono text-[10px] text-white">{reviewCount}</span>}
-                {t.id === "team" && <span className="font-mono text-[11px] opacity-50">{agents.length}</span>}
+                {t(item.label)}
+                {item.id === "review" && reviewCount > 0 && <span className="rounded-full bg-[#8b6cf0] px-1.5 font-mono text-[10px] text-white">{reviewCount}</span>}
+                {item.id === "team" && <span className="font-mono text-[11px] opacity-50">{agents.length}</span>}
               </button>
             ))}
           </nav>

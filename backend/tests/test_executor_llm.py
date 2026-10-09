@@ -166,7 +166,8 @@ async def test_ollama_down_fails_the_task_with_a_readable_error(
     await until(world.is_task(task["id"], TaskStatus.FAILED))
     [run] = await world.runs(task["id"])
     assert run.status == RunStatus.FAILED
-    assert run.error == "Ollama не отвечает по адресу http://ollama.test. Запустите Ollama и повторите задачу."
+    assert run.error == "Ollama is not answering at http://ollama.test. Start Ollama and retry the task."
+    assert (run.error_code, run.error_params) == ("ollama_unavailable", {"url": "http://ollama.test"})
 
 
 async def test_waiting_runs_are_interrupted_on_restart(

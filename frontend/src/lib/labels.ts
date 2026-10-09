@@ -1,124 +1,123 @@
-import type { AgentState, AgentStatus, JobsReport, ReleaseBlocker, TaskStage, TaskStatus } from "@/lib/api";
+import type { AgentState, AgentStatus, JobsReport, Run, TaskStage, TaskStatus, WebStep } from "@/lib/api";
+import type { Key, T } from "@/lib/i18n";
 
 type Tag = { label: string; color: string };
 
-export const AGENT_STATUS: Record<AgentStatus, Tag> = {
-  off_site: { label: "Не в офисе", color: "#9aa0ab" },
-  arriving: { label: "Едет в офис", color: "#4f8fe8" },
-  idle: { label: "Свободен", color: "#2fbf83" },
-  working: { label: "Работает", color: "#f0a020" },
-  waiting_review: { label: "Ждёт проверки", color: "#8b6cf0" },
-  leaving: { label: "Уезжает домой", color: "#4f8fe8" },
-  returning: { label: "Возвращается", color: "#4f8fe8" },
+export const AGENT_STATUS_COLOR: Record<AgentStatus, string> = {
+  off_site: "#9aa0ab",
+  arriving: "#4f8fe8",
+  idle: "#2fbf83",
+  working: "#f0a020",
+  waiting_review: "#8b6cf0",
+  leaving: "#4f8fe8",
+  returning: "#4f8fe8",
 };
+
+export const TASK_STATUS_COLOR: Record<TaskStatus, string> = {
+  queued: "#7d8796",
+  in_progress: "#f0a020",
+  paused: "#b0a48f",
+  needs_review: "#8b6cf0",
+  changes_requested: "#ff7a59",
+  done: "#2fbf83",
+  failed: "#e5484d",
+  cancelled: "#5c6370",
+};
+
+export const WAITING_FOR_MODEL_COLOR = "#6f9bc6";
+const ON_WEB_COLOR = "#2a9fd6";
 
 /** Statuses of an agent who is in the building (at the desk, resting, or walking back to the desk). */
 export const IN_OFFICE: ReadonlySet<AgentStatus> = new Set(["idle", "working", "waiting_review", "returning"]);
 
-/** Hint on a disabled «Отпустить домой» button (`/state` → `release_blocked`). */
-export const RELEASE_BLOCKED: Record<ReleaseBlocker, string> = {
-  tasks: "Есть задачи в работе, в очереди или на доработке",
-  on_the_way: "Сотрудник ещё идёт к столу",
-  away: "Сотрудника нет в офисе",
-};
-
-export const WAITING_FOR_MODEL: Tag = { label: "Ждёт модель", color: "#6f9bc6" };
-export const ON_WEB: Tag = { label: "Ищет в сети", color: "#2a9fd6" };
+export const taskTag = (t: T, status: TaskStatus): Tag => ({ label: t(`taskStatus.${status}`), color: TASK_STATUS_COLOR[status] });
+export const stageName = (t: T, stage: TaskStage) => t(`taskStage.${stage}`);
 
 /** Status tag of an agent as shown everywhere: "working" splits into working / waiting for the model. */
-export function agentTag(agent: Pick<AgentState, "status" | "current_task">): Tag {
-  if (agent.status === "working" && agent.current_task?.on_web) return ON_WEB;
-  if (agent.status === "working" && agent.current_task?.waiting_for_model) return WAITING_FOR_MODEL;
-  return AGENT_STATUS[agent.status];
+export function agentTag(t: T, agent: Pick<AgentState, "status" | "current_task">): Tag {
+  if (agent.status === "working" && agent.current_task?.on_web) return { label: t("agentStatus.on_web"), color: ON_WEB_COLOR };
+  if (agent.status === "working" && agent.current_task?.waiting_for_model) return { label: t("agentStatus.waiting_model"), color: WAITING_FOR_MODEL_COLOR };
+  return { label: t(`agentStatus.${agent.status}`), color: AGENT_STATUS_COLOR[agent.status] };
 }
-
-const WRITING: Record<TaskStage, string> = {
-  plan: "Пишет план",
-  research: "Изучает материалы",
-  draft: "Пишет черновик",
-  self_check: "Проверяет результат",
-};
 
 /** Caption above an agent's head in office life, from what is really going on (never generated). */
-export function activityCaption(agent: Pick<AgentState, "status" | "current_task" | "activity_log">): string | null {
+export function activityCaption(t: T, agent: Pick<AgentState, "status" | "current_task" | "activity_log">): string | null {
   const now = agent.activity_log.at(-1)?.kind;
   const task = agent.current_task;
-  if (now === "waiting_model") return "Ждёт модель";
-  if (now === "waiting_review" || agent.status === "waiting_review") return "Ждёт проверки";
-  if (now === "idle" || agent.status === "idle") return "Отдыхает";
+  if (now === "waiting_model") return t("caption.waitingModel");
+  if (now === "waiting_review" || agent.status === "waiting_review") return t("caption.waitingReview");
+  if (now === "idle" || agent.status === "idle") return t("caption.resting");
   if (agent.status !== "working") return null;
-  if (task?.web_step?.kind === "fetch") return `Читает ${task.web_step.target}`;
-  if (task?.web_step?.kind === "search") return "Ищет в сети";
-  if (task?.web_step?.kind === "jobs") return "Ищет вакансии";
-  if (task?.web_step?.kind === "job") return "Читает вакансию";
-  if (task?.run_state === "waiting") return "Ждёт модель";
-  return task?.stage ? WRITING[task.stage] : "Работает";
+  if (task?.web_step?.kind === "fetch") return t("caption.reading", { site: task.web_step.target });
+  if (task?.web_step?.kind === "search") return t("caption.searchingWeb");
+  if (task?.web_step?.kind === "jobs") return t("caption.searchingJobs");
+  if (task?.web_step?.kind === "job") return t("caption.readingJob");
+  if (task?.run_state === "waiting") return t("caption.waitingModel");
+  return task?.stage ? t(`caption.${task.stage}`) : t("caption.working");
 }
 
-const EXCLUSION: [RegExp, string][] = [
-  [/^security clearance/, "Допуск с условием проживания (SC/DV/NPPV)"],
-  [/residency/, "Требование лет проживания в UK"],
-  [/nationality|citizenship/, "Требование гражданства"],
+const EXCLUSION: [RegExp, Key][] = [
+  [/^security clearance/, "exclusion.clearance"],
+  [/residency/, "exclusion.residency"],
+  [/nationality|citizenship/, "exclusion.nationality"],
 ];
 
-/** Russian name of a hard-filter reason sent by the backend (`app/jobs/eligibility.py`). */
-export function exclusionReason(reason: string): string {
-  return EXCLUSION.find(([re]) => re.test(reason))?.[1] ?? reason;
+/** The interface name of a hard-filter reason sent by the backend (`app/jobs/eligibility.py`). */
+export function exclusionReason(t: T, reason: string): string {
+  const key = EXCLUSION.find(([re]) => re.test(reason))?.[1];
+  return key ? t(key) : reason;
 }
 
-const FRESHNESS_NOTE: [RegExp, (m: RegExpMatchArray) => string][] = [
-  [/^open until (\S+) \((\w+) API\)/, (m) => `открыта до ${m[1]} (${m[2]})`],
-  [/^closed on (\S+) \((\w+) API\)/, (m) => `срок подачи истёк ${m[1]} (${m[2]})`],
-  [/^(\w+) no longer lists it/, (m) => `${m[1]} её больше не показывает`],
-  [/^the advert page is gone \(HTTP (\d+)\)/, (m) => `страница вакансии удалена (HTTP ${m[1]})`],
-  [/^the advert page says "(.+)"/, (m) => `на странице: «${m[1]}»`],
-  [/^the advert page is up/, () => "страница вакансии открывается"],
-  [/^the site does not let automated requests in \(HTTP (\d+)\)/, (m) => `сайт не пускает автоматические запросы (HTTP ${m[1]})`],
-  [/^Adzuna's API gives no closing date/, () => "Adzuna не сообщает срок подачи"],
-  [/^Reed gave no closing date/, () => "Reed не сообщил срок подачи"],
-  [/^the page was not opened/, () => "страница не открывалась"],
+const FRESHNESS_NOTE: [RegExp, (t: T, m: RegExpMatchArray) => string][] = [
+  [/^open until (\S+) \((\w+) API\)/, (t, m) => t("freshness.openUntil", { date: m[1], source: m[2] })],
+  [/^closed on (\S+) \((\w+) API\)/, (t, m) => t("freshness.closedOn", { date: m[1], source: m[2] })],
+  [/^(\w+) no longer lists it/, (t, m) => t("freshness.notListed", { source: m[1] })],
+  [/^the advert page is gone \(HTTP (\d+)\)/, (t, m) => t("freshness.gone", { status: m[1] })],
+  [/^the advert page says "(.+)"/, (t, m) => t("freshness.says", { phrase: m[1] })],
+  [/^the advert page is up/, (t) => t("freshness.up")],
+  [/^the site does not let automated requests in \(HTTP (\d+)\)/, (t, m) => t("freshness.refused", { status: m[1] })],
+  [/^Adzuna's API gives no closing date/, (t) => t("freshness.adzunaNoDate")],
+  [/^Reed gave no closing date/, (t) => t("freshness.reedNoDate")],
+  [/^the page was not opened/, (t) => t("freshness.notOpened")],
 ];
 
-/** "найдено 20, исключено 2, закрыто 1" for a research stage that used the job tools. */
-export function jobCounts(report: JobsReport): string {
-  const closed = report.expired?.length ?? 0;
-  const found = report.jobs.length + report.excluded.length + closed;
-  return `найдено ${found}, исключено ${report.excluded.length}${closed ? `, закрыто ${closed}` : ""}`;
-}
-
-/** Russian text of a freshness note from the backend (`app/jobs/freshness.py`, the sources). */
-export function freshnessNote(note: string | undefined): string {
+/** A freshness note from the backend (`app/jobs/freshness.py`, the sources) in the interface language. */
+export function freshnessNote(t: T, note: string | undefined): string {
   if (!note) return "";
   for (const [re, label] of FRESHNESS_NOTE) {
     const m = note.match(re);
-    if (m) return label(m);
+    if (m) return label(t, m);
   }
   return note;
 }
 
-export const TASK_STATUS: Record<TaskStatus, Tag> = {
-  queued: { label: "В очереди", color: "#7d8796" },
-  in_progress: { label: "В работе", color: "#f0a020" },
-  paused: { label: "На паузе", color: "#b0a48f" },
-  needs_review: { label: "На проверке", color: "#8b6cf0" },
-  changes_requested: { label: "На доработке", color: "#ff7a59" },
-  done: { label: "Готово", color: "#2fbf83" },
-  failed: { label: "Ошибка", color: "#e5484d" },
-  cancelled: { label: "Отменена", color: "#5c6370" },
-};
+/** "found 20, excluded 2, closed 1" for a research stage that used the job tools. */
+export function jobCounts(t: T, report: JobsReport): string {
+  const closed = report.expired?.length ?? 0;
+  const found = report.jobs.length + report.excluded.length + closed;
+  return closed ? t("jobCounts.foundClosed", { found, excluded: report.excluded.length, closed }) : t("jobCounts.found", { found, excluded: report.excluded.length });
+}
 
-export const TASK_STAGE: Record<TaskStage, string> = {
-  plan: "План",
-  research: "Исследование",
-  draft: "Черновик",
-  self_check: "Самопроверка",
-};
+type Coded = { code?: string | null; params?: Record<string, unknown> | null; text?: string | null };
 
-export const RUN_STATUS: Record<string, string> = {
-  waiting: "Ждёт модель",
-  running: "Идёт",
-  succeeded: "Успешно",
-  failed: "Ошибка",
-  interrupted: "Прерван перезапуском",
-  cancelled: "Отменён",
-};
+function coded(t: T, prefix: "stageError" | "stepDetail", { code, params, text }: Coded): string | null {
+  if (code) {
+    const values = Object.fromEntries(Object.entries(params ?? {}).map(([k, v]) => [k, typeof v === "number" ? v : String(v)]));
+    const shown = t(`${prefix}.${code}` as Key, values);
+    if (shown !== `${prefix}.${code}`) return shown;
+  }
+  return text ?? null;
+}
+
+/** A failed run's error in the interface language (older runs without a code show their stored text). */
+export function runError(t: T, run: Pick<Run, "error" | "error_code" | "error_params">): string | null {
+  return coded(t, "stageError", { code: run.error_code, params: run.error_params, text: run.error });
+}
+
+/** A web or job step's detail in the interface language. */
+export function stepDetail(t: T, step: WebStep): string | undefined {
+  const detail = step.detail_code === "job_closed" ? t("stepDetail.job_closed", { note: freshnessNote(t, String(step.detail_params?.note ?? "")) })
+    : step.detail_code === "job_not_eligible" ? t("stepDetail.job_not_eligible", { reason: exclusionReason(t, String(step.detail_params?.reason ?? "")) })
+    : coded(t, "stepDetail", { code: step.detail_code, params: step.detail_params, text: step.detail });
+  return detail ?? undefined;
+}
