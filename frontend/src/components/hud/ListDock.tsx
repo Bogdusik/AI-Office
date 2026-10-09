@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Task, TaskStatus } from "@/lib/api";
-import { TASK_STAGE, TASK_STATUS, agentTag } from "@/lib/labels";
+import { useT } from "@/lib/i18n";
+import { agentTag, stageName, taskTag } from "@/lib/labels";
 import { allAgents, findAgent } from "@/lib/world";
 import { useTasksStore } from "@/store/useTasksStore";
 import { useUiStore } from "@/store/useUiStore";
@@ -52,6 +53,7 @@ function Row({ color, title, sub, tag, active, onClick, testId }: { color: strin
 }
 
 export function ListDock() {
+  const t = useT();
   const world = useWorldStore((s) => s.world);
   const tasks = useTasksStore((s) => s.tasks);
   const selection = useUiStore((s) => s.selection);
@@ -71,54 +73,54 @@ export function ListDock() {
     };
   }, [tasks, world]);
 
-  const goTask = (t: Task) => {
-    const located = findAgent(world, t.agent_id);
+  const goTask = (task: Task) => {
+    const located = findAgent(world, task.agent_id);
     if (!located) return;
-    focusOn({ kind: "agent", id: t.agent_id }, located.floor.number);
-    openTask(t.id);
+    focusOn({ kind: "agent", id: task.agent_id }, located.floor.number);
+    openTask(task.id);
   };
 
-  const taskRow = (t: Task) => {
-    const s = TASK_STATUS[t.status];
-    const owner = findAgent(world, t.agent_id)?.agent;
-    const active = t.id === taskId ? "strong" : t.agent_id === selectedAgent && taskId === null ? "soft" : null;
+  const taskRow = (task: Task) => {
+    const s = taskTag(t, task.status);
+    const owner = findAgent(world, task.agent_id)?.agent;
+    const active = task.id === taskId ? "strong" : task.agent_id === selectedAgent && taskId === null ? "soft" : null;
     return (
       <Row
-        key={t.id}
-        testId={`row-task-${t.id}`}
+        key={task.id}
+        testId={`row-task-${task.id}`}
         color={s.color}
-        title={t.title}
-        sub={`${owner?.title ?? ""}${t.stage ? ` · ${TASK_STAGE[t.stage]}` : ""}`}
+        title={task.title}
+        sub={`${owner?.title ?? ""}${task.stage ? ` · ${stageName(t, task.stage)}` : ""}`}
         tag={s.label}
         active={active}
-        onClick={() => goTask(t)}
+        onClick={() => goTask(task)}
       />
     );
   };
 
   const tabs: { id: Tab; label: string; count: number }[] = [
-    { id: "agents", label: "Сотрудники", count: agents.length },
-    { id: "tasks", label: "Задачи", count: visible.tasks.length },
-    { id: "review", label: "На проверке", count: visible.review.length },
+    { id: "agents", label: t("list.agents"), count: agents.length },
+    { id: "tasks", label: t("list.tasks"), count: visible.tasks.length },
+    { id: "review", label: t("list.review"), count: visible.review.length },
   ];
 
   return (
     <HudBlock
       id="list"
-      title="Офис"
+      title={t("list.title")}
       className="max-h-[min(420px,calc(100dvh-140px))] w-[360px]"
       extra={
         <div role="tablist" className="flex gap-0.5 rounded-full bg-ink/5 p-0.5">
-          {tabs.map((t) => (
+          {tabs.map((item) => (
             <button
-              key={t.id}
+              key={item.id}
               type="button"
               role="tab"
-              aria-selected={tab === t.id}
-              onClick={() => setTab(t.id)}
-              className={`rounded-full px-2.5 py-1 text-[11px] font-medium whitespace-nowrap transition ${tab === t.id ? "bg-white text-ink shadow-sm" : "text-ink/55 hover:text-ink"}`}
+              aria-selected={tab === item.id}
+              onClick={() => setTab(item.id)}
+              className={`rounded-full px-2.5 py-1 text-[11px] font-medium whitespace-nowrap transition ${tab === item.id ? "bg-white text-ink shadow-sm" : "text-ink/55 hover:text-ink"}`}
             >
-              {t.label} <span className="font-mono opacity-50">{t.count}</span>
+              {item.label} <span className="font-mono opacity-50">{item.count}</span>
             </button>
           ))}
         </div>
@@ -127,7 +129,7 @@ export function ListDock() {
       <div className="flex min-h-0 flex-col gap-0.5 overflow-y-auto px-2 pb-2">
         {tab === "agents" &&
           agents.map(({ agent, floor }) => {
-            const s = agentTag(agent);
+            const s = agentTag(t, agent);
             const current = agent.current_task;
             return (
               <Row
@@ -135,15 +137,15 @@ export function ListDock() {
                 testId={`row-agent-${agent.id}`}
                 color={s.color}
                 title={`${agent.title} · ${agent.name}`}
-                sub={current ? `${TASK_STATUS[current.status].label}: ${current.title}` : `Этаж ${floor.number} · без задачи`}
+                sub={current ? `${taskTag(t, current.status).label}: ${current.title}` : t("list.noTask", { floor: floor.number })}
                 tag={s.label}
                 active={agent.id === selectedAgent ? "strong" : null}
                 onClick={() => focusOn({ kind: "agent", id: agent.id }, floor.number)}
               />
             );
           })}
-        {tab === "tasks" && (visible.tasks.length ? visible.tasks.map(taskRow) : <p className="px-2.5 py-3 text-xs text-ink/45">Задач пока нет.</p>)}
-        {tab === "review" && (visible.review.length ? visible.review.map(taskRow) : <p className="px-2.5 py-3 text-xs text-ink/45">Ничего не ждёт проверки.</p>)}
+        {tab === "tasks" && (visible.tasks.length ? visible.tasks.map(taskRow) : <p className="px-2.5 py-3 text-xs text-ink/45">{t("list.noTasks")}</p>)}
+        {tab === "review" && (visible.review.length ? visible.review.map(taskRow) : <p className="px-2.5 py-3 text-xs text-ink/45">{t("list.nothingToReview")}</p>)}
       </div>
     </HudBlock>
   );

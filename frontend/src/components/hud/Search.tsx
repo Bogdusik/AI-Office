@@ -2,7 +2,8 @@
 
 import { useMemo, useState } from "react";
 import { card } from "@/components/panels/ui";
-import { TASK_STATUS, agentTag } from "@/lib/labels";
+import { useT } from "@/lib/i18n";
+import { agentTag, taskTag } from "@/lib/labels";
 import { allAgents, findAgent } from "@/lib/world";
 import { useTasksStore } from "@/store/useTasksStore";
 import { useUiStore } from "@/store/useUiStore";
@@ -12,9 +13,11 @@ type Result =
   | { kind: "agent"; key: string; agentId: number; floor: number; title: string; sub: string; color: string }
   | { kind: "task"; key: string; agentId: number; floor: number; taskId: number; title: string; sub: string; color: string };
 
-const norm = (s: string) => s.toLocaleLowerCase("ru").replace(/ё/g, "е");
+/** Case- and yo-insensitive (agents and tasks may be named in Russian). */
+const norm = (s: string) => s.toLowerCase().replace(/\u0451/g, "\u0435");
 
 export function Search() {
+  const t = useT();
   const world = useWorldStore((s) => s.world);
   const tasks = useTasksStore((s) => s.tasks);
   const focusOn = useUiStore((s) => s.focusOn);
@@ -35,30 +38,30 @@ export function Search() {
         agentId: agent.id,
         floor: floor.number,
         title: `${agent.title} · ${agent.name}`,
-        sub: `Этаж ${floor.number} · ${agentTag(agent).label}`,
-        color: agentTag(agent).color,
+        sub: t("hud.searchAgentSub", { floor: floor.number, status: agentTag(t, agent).label }),
+        color: agentTag(t, agent).color,
       }));
     const found: Result[] = tasks
-      .filter((t) => norm(t.title).includes(q))
-      .flatMap((t) => {
-        const located = findAgent(world, t.agent_id);
+      .filter((task) => norm(task.title).includes(q))
+      .flatMap((task) => {
+        const located = findAgent(world, task.agent_id);
         if (!located) return [];
         return [
           {
             kind: "task" as const,
-            key: `t${t.id}`,
-            agentId: t.agent_id,
+            key: `t${task.id}`,
+            agentId: task.agent_id,
             floor: located.floor.number,
-            taskId: t.id,
-            title: t.title,
-            sub: `${located.agent.title} · ${TASK_STATUS[t.status].label}`,
-            color: TASK_STATUS[t.status].color,
+            taskId: task.id,
+            title: task.title,
+            sub: `${located.agent.title} · ${taskTag(t, task.status).label}`,
+            color: taskTag(t, task.status).color,
           },
         ];
       })
       .slice(0, 6);
     return [...agents, ...found];
-  }, [query, world, tasks]);
+  }, [query, world, tasks, t]);
 
   const choose = (r: Result) => {
     focusOn({ kind: "agent", id: r.agentId }, r.floor);
@@ -81,8 +84,8 @@ export function Search() {
           role="combobox"
           aria-expanded={showList}
           aria-controls="search-results"
-          aria-label="Поиск по сотрудникам и задачам"
-          placeholder="Поиск сотрудника или задачи"
+          aria-label={t("hud.searchLabel")}
+          placeholder={t("hud.searchPlaceholder")}
           value={query}
           onChange={(e) => {
             setQuery(e.target.value);
@@ -104,7 +107,7 @@ export function Search() {
       </div>
       {showList && (
         <ul id="search-results" role="listbox" className={`${card} absolute inset-x-0 top-12 max-h-96 overflow-y-auto p-1.5`}>
-          {results.length === 0 && <li className="px-3 py-2 text-sm text-ink/45">Ничего не найдено</li>}
+          {results.length === 0 && <li className="px-3 py-2 text-sm text-ink/45">{t("hud.nothingFound")}</li>}
           {results.map((r, i) => (
             <li key={r.key} role="option" aria-selected={i === active}>
               <button
@@ -114,7 +117,7 @@ export function Search() {
                 onClick={() => choose(r)}
                 className={`flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left ${i === active ? "bg-ink/5" : ""}`}
               >
-                <span className="font-mono text-[9px] tracking-wider text-ink/35 uppercase">{r.kind === "agent" ? "сотр" : "задача"}</span>
+                <span className="font-mono text-[9px] tracking-wider text-ink/35 uppercase">{r.kind === "agent" ? t("hud.searchAgent") : t("hud.searchTask")}</span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm text-ink">{r.title}</span>
                   <span className="flex items-center gap-1.5 text-[11px] text-ink/50">

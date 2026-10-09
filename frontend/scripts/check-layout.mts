@@ -227,7 +227,7 @@ for (const [label, floors, expectedSpots] of [
   const { building, site } = scene;
   const world = tripWorld(building, site, carRoutes(site), walkGraph(building, site));
   const D = { arrive: 75, depart: 75, turnBack: 50, returnExtra: 12 };
-  /** Six arriving at once; six leaving one after another, as «Отпустить всех» lets them go (EXECUTOR_RELEASE_GAP_SECONDS). */
+  /** Six arriving at once; six leaving one after another, as «Release all» lets them go (EXECUTOR_RELEASE_GAP_SECONDS). */
   const GAP = { arrive: 0.4, depart: 5 };
   const desks: [number, number][] = [[1, 0], [1, 1], [1, 2], [1, 3], [2, 0], [2, 1]];
   const trips = (kind: "arrive" | "depart", start = 1000, gap = 0.4): TripInput[] =>

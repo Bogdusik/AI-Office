@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import { type ModelUser, type ServerRoom, api } from "@/lib/api";
 import { humanize } from "@/lib/errors";
-import { TASK_STAGE } from "@/lib/labels";
+import { useFormat, useT } from "@/lib/i18n";
+import { stageName } from "@/lib/labels";
 import { useUiStore } from "@/store/useUiStore";
 import { useWorldStore } from "@/store/useWorldStore";
 import { Empty, ErrorNote, PanelShell, Section, formatDate, formatNumber } from "./ui";
@@ -11,11 +12,12 @@ import { Empty, ErrorNote, PanelShell, Section, formatDate, formatNumber } from 
 const POLL_MS = 3000;
 
 function Dot({ ok, label, detail }: { ok: boolean; label: string; detail?: string | null }) {
+  const t = useT();
   return (
     <div className="flex items-center gap-2 rounded-lg border border-line bg-white px-3 py-2 text-sm" data-ok={ok}>
       <span className={`h-2 w-2 shrink-0 rounded-full ${ok ? "bg-signal-ok shadow-[0_0_8px_var(--color-signal-ok)]" : "bg-signal-down"}`} />
       <span className="font-medium text-ink">{label}</span>
-      <span className="ml-auto truncate text-xs text-ink/50">{detail ?? (ok ? "работает" : "недоступен")}</span>
+      <span className="ml-auto truncate text-xs text-ink/50">{detail ?? (ok ? t("server.up") : t("server.down"))}</span>
     </div>
   );
 }
@@ -31,6 +33,7 @@ function Stat({ label, value, sub }: { label: string; value: string; sub?: strin
 }
 
 function Users({ users, empty }: { users: ModelUser[]; empty: string }) {
+  const t = useT();
   if (!users.length) return <Empty>{empty}</Empty>;
   return (
     <ul className="flex flex-col gap-1.5">
@@ -40,10 +43,10 @@ function Users({ users, empty }: { users: ModelUser[]; empty: string }) {
             <span className="truncate font-medium text-ink">
               {u.title} · {u.name}
             </span>
-            <span className="shrink-0 text-xs text-ink/45">с {formatDate(u.since)}</span>
+            <span className="shrink-0 text-xs text-ink/45">{t("server.since", { date: formatDate(u.since) })}</span>
           </div>
           <div className="truncate text-xs text-ink/55">
-            {TASK_STAGE[u.stage]} · {u.task_title}
+            {stageName(t, u.stage)} · {u.task_title}
           </div>
         </li>
       ))}
@@ -53,6 +56,8 @@ function Users({ users, empty }: { users: ModelUser[]; empty: string }) {
 
 /** The server room: model server, GPU, web search, who uses the model and token usage (real model only). */
 export function ServerPanel() {
+  const t = useT();
+  const fmt = useFormat();
   const select = useUiStore((s) => s.select);
   const lastUpdated = useWorldStore((s) => s.lastUpdated);
   const [room, setRoom] = useState<ServerRoom | null>(null);
@@ -83,70 +88,88 @@ export function ServerPanel() {
   const model = room?.ollama.models[0];
 
   return (
-    <PanelShell testId="server-panel" eyebrow="Серверная · Engineering" title="Модель и сеть" subtitle={room ? `Исполнитель: ${room.worker === "llm" ? "локальная модель" : "фальшивый"}` : undefined} onClose={() => select(null)}>
-      {error && !room ? <ErrorNote text={humanize(error)} /> : null}
+    <PanelShell
+      testId="server-panel"
+      eyebrow={t("server.eyebrow")}
+      title={t("server.title")}
+      subtitle={room ? t("server.worker", { worker: room.worker === "llm" ? t("server.workerLlm") : t("server.workerFake") }) : undefined}
+      onClose={() => select(null)}
+    >
+      {error && !room ? <ErrorNote text={humanize(t, error)} /> : null}
       {room && (
         <>
-          <Section title="Сервисы">
+          <Section title={t("server.services")}>
             <div className="flex flex-col gap-1.5">
-              <Dot ok={room.ollama.up} label="Ollama" detail={room.ollama.up ? `версия ${room.ollama.version ?? "?"}` : `не отвечает · ${room.ollama.url}`} />
-              <Dot ok={room.searxng_up} label="Поиск (SearXNG)" detail={room.searxng_up ? room.searxng_url : `не отвечает · ${room.searxng_url}`} />
+              <Dot
+                ok={room.ollama.up}
+                label="Ollama"
+                detail={room.ollama.up ? t("server.ollamaVersion", { version: room.ollama.version ?? "?" }) : t("server.notAnswering", { url: room.ollama.url })}
+              />
+              <Dot ok={room.searxng_up} label={t("server.search")} detail={room.searxng_up ? room.searxng_url : t("server.notAnswering", { url: room.searxng_url })} />
             </div>
           </Section>
 
-          <Section title="Источники вакансий">
+          <Section title={t("server.jobSources")}>
             <div className="flex flex-col gap-1.5" data-testid="job-sources">
               {room.job_sources.map((s) => {
                 const failedLast = s.last_error_at !== null && (s.last_ok_at === null || s.last_error_at > s.last_ok_at);
                 const detail = !s.configured
-                  ? "нет ключей в backend/.env"
+                  ? t("server.noKeys")
                   : failedLast
                     ? `${s.last_error} · ${formatDate(s.last_error_at)}`
                     : s.last_ok_at
-                      ? `ключи заданы · последний запрос ${formatDate(s.last_ok_at)}`
-                      : "ключи заданы · запросов ещё не было";
+                      ? t("server.keysLastRequest", { date: formatDate(s.last_ok_at) })
+                      : t("server.keysNoRequests");
                 return <Dot key={s.name} ok={s.configured && !failedLast} label={s.label} detail={detail} />;
               })}
             </div>
           </Section>
 
-          <Section title="Модель">
+          <Section title={t("server.model")}>
             <div className="grid grid-cols-2 gap-2" data-testid="server-model">
-              <Stat label="Загружена" value={model ? model.name : "—"} sub={model ? `контекст ${formatNumber(model.context_length ?? 0)}` : `по умолчанию ${room.default_model}`} />
-              <Stat label="Модель в видеопамяти" value={model ? `${model.vram_gb} ГБ` : "—"} sub={model ? `из ${model.size_gb} ГБ` : "не загружена"} />
               <Stat
-                label="Видеокарта"
-                value={gpu ? `${(gpu.used_mb / 1024).toFixed(1)} / ${(gpu.total_mb / 1024).toFixed(0)} ГБ` : "—"}
-                sub={gpu ? `${gpu.name.replace("NVIDIA GeForce ", "")} · загрузка ${gpu.utilization}%` : "nvidia-smi недоступен"}
+                label={t("server.loaded")}
+                value={model ? model.name : "—"}
+                sub={model ? t("server.context", { size: model.context_length ?? 0 }) : t("server.defaultModel", { model: room.default_model })}
               />
               <Stat
-                label="Скорость последнего запроса"
-                value={room.last_speed ? `${room.last_speed.tokens_per_second} ток/с` : "—"}
-                sub={room.last_speed ? `${room.last_speed.agent_title} · ${formatDate(room.last_speed.finished_at)}` : "запросов ещё не было"}
+                label={t("server.vram")}
+                value={model ? t("server.gb", { value: fmt.decimal(model.vram_gb, 1) }) : "—"}
+                sub={model ? t("server.ofGb", { value: fmt.decimal(model.size_gb, 1) }) : t("server.notLoaded")}
+              />
+              <Stat
+                label={t("server.gpu")}
+                value={gpu ? t("server.gpuUsage", { used: fmt.decimal(gpu.used_mb / 1024, 1), total: fmt.decimal(gpu.total_mb / 1024, 0) }) : "—"}
+                sub={gpu ? t("server.gpuLoad", { name: gpu.name.replace("NVIDIA GeForce ", ""), load: gpu.utilization }) : t("server.noSmi")}
+              />
+              <Stat
+                label={t("server.speed")}
+                value={room.last_speed ? t("server.tokensPerSecond", { value: fmt.decimal(room.last_speed.tokens_per_second, 1) }) : "—"}
+                sub={room.last_speed ? `${room.last_speed.agent_title} · ${formatDate(room.last_speed.finished_at)}` : t("server.noRequests")}
               />
             </div>
           </Section>
 
-          <Section title="Работает с моделью" count={room.running.length}>
-            <Users users={room.running} empty="Модель свободна." />
+          <Section title={t("server.running")} count={room.running.length}>
+            <Users users={room.running} empty={t("server.modelFree")} />
           </Section>
-          <Section title="Очередь к модели" count={room.queue.length}>
-            <Users users={room.queue} empty="Очереди нет." />
+          <Section title={t("server.queue")} count={room.queue.length}>
+            <Users users={room.queue} empty={t("server.noQueue")} />
           </Section>
 
-          <Section title="Токены" action={<span className="text-[11px] text-ink/40">без запусков fake</span>}>
+          <Section title={t("server.tokens")} action={<span className="text-[11px] text-ink/40">{t("server.noFake")}</span>}>
             <div className="grid grid-cols-2 gap-2" data-testid="server-tokens">
-              <Stat label="Сегодня (вход / выход)" value={`${formatNumber(room.totals.today_in)} / ${formatNumber(room.totals.today_out)}`} />
-              <Stat label="Всего (вход / выход)" value={`${formatNumber(room.totals.total_in)} / ${formatNumber(room.totals.total_out)}`} />
+              <Stat label={t("server.today")} value={`${formatNumber(room.totals.today_in)} / ${formatNumber(room.totals.today_out)}`} />
+              <Stat label={t("server.allTime")} value={`${formatNumber(room.totals.total_in)} / ${formatNumber(room.totals.total_out)}`} />
             </div>
             {room.tokens.length ? (
               <div className="overflow-hidden rounded-lg border border-line">
                 <table className="w-full text-xs">
                   <thead className="bg-paper/70 text-left text-ink/50">
                     <tr>
-                      <th className="px-2.5 py-1.5 font-medium">Сотрудник</th>
-                      <th className="px-2.5 py-1.5 text-right font-medium">Сегодня</th>
-                      <th className="px-2.5 py-1.5 text-right font-medium">Всего</th>
+                      <th className="px-2.5 py-1.5 font-medium">{t("server.agent")}</th>
+                      <th className="px-2.5 py-1.5 text-right font-medium">{t("server.todayShort")}</th>
+                      <th className="px-2.5 py-1.5 text-right font-medium">{t("server.totalShort")}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -163,7 +186,7 @@ export function ServerPanel() {
                 </table>
               </div>
             ) : (
-              <Empty>Настоящая модель ещё не тратила токены.</Empty>
+              <Empty>{t("server.noTokens")}</Empty>
             )}
           </Section>
         </>

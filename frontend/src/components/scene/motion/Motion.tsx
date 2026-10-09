@@ -5,6 +5,7 @@ import { useFrame } from "@react-three/fiber";
 import { Suspense, useMemo, useRef, useState } from "react";
 import { type Group, type Mesh, type MeshBasicMaterial, Vector3 } from "three";
 import type { AgentState, WorldState } from "@/lib/api";
+import { useT } from "@/lib/i18n";
 import { activityCaption } from "@/lib/labels";
 import {
   ARM_RAISED,
@@ -185,6 +186,7 @@ function applyPose(rig: Rig, pose: FigurePose, hipY: number) {
  * All of it is placed in one frame loop from pure schedules of the server clock: no React renders per frame.
  */
 export function Motion({ world, scene, enabled, life }: { world: WorldState; scene: SceneSpec; enabled: boolean; life: boolean }) {
+  const t = useT();
   const { building, site, moving } = scene;
   const tw = useMemo(() => tripWorld(building, site, carRoutes(site), walkGraph(building, site)), [building, site]);
   const ys = useMemo(() => liftHeights(building), [building]);
@@ -220,10 +222,10 @@ export function Motion({ world, scene, enabled, life }: { world: WorldState; sce
     return world.floors.flatMap((f) =>
       f.agents.filter(inOffice).flatMap((a) => {
         const plan = byAgent.get(a.id);
-        return plan ? [{ agent: a, plan, caption: activityCaption(a), floorIndex: indexOf.get(f.number) ?? 0 }] : [];
+        return plan ? [{ agent: a, plan, caption: activityCaption(t, a), floorIndex: indexOf.get(f.number) ?? 0 }] : [];
       }),
     );
-  }, [lifeSchedule, world, scene]);
+  }, [lifeSchedule, world, scene, t]);
   const staff = useMemo(() => (living ? receptionLayout(building).staff.map((s) => ({ ...s, position: [s.position[0], building.floors[0].baseY, s.position[2]] as const })) : []), [living, building]);
 
   const rigs = useRef(new Map<string, Rig>());
