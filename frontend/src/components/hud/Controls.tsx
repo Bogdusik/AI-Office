@@ -6,7 +6,7 @@ import { type FloorSelection, useUiStore } from "@/store/useUiStore";
 import { useWorldStore } from "@/store/useWorldStore";
 
 const pill =
-  "rounded-full px-3.5 py-1.5 text-xs font-medium tracking-wide transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
+  "rounded-full px-3.5 py-1.5 text-xs font-medium whitespace-nowrap tracking-wide transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
 
 /** EN | RU: the interface language, remembered in the browser (English until changed). */
 function LanguageSwitch() {
