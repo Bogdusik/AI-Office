@@ -1,15 +1,19 @@
 import asyncio
+import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
+from dataclasses import replace
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from app.events import Event, bus
 from app.executor import Executor, FakeWorker, StageInput, StageOutput, Timings
+from app.executor.runner import db_unreachable
 from app.executor.worker import StageReport
 from app.models import Agent, Artifact, Run, Task
 from app.models.enums import AgentStatus, RunProvider, RunStatus, TaskStage, TaskStatus
@@ -483,6 +487,80 @@ async def test_only_one_executor_runs_per_database(
 
     await first.stop()
     await until(lambda: second.active)
+
+
+class _Refused:
+    async def __aenter__(self) -> None:
+        raise ConnectionRefusedError(1225, "The remote computer refused the network connection")
+
+    async def __aexit__(self, *_: object) -> None:
+        return None
+
+
+class DatabaseDownAtFirst:
+    """An engine whose first `failures` connections are refused, like Postgres that is not up yet."""
+
+    def __init__(self, engine: AsyncEngine, failures: int) -> None:
+        self._engine = engine
+        self.failures = failures
+        self.attempts = 0
+
+    def connect(self) -> Any:
+        self.attempts += 1
+        if self.attempts <= self.failures:
+            return _Refused()
+        return self._engine.connect()
+
+
+async def test_executor_waits_for_the_database_and_starts_by_itself(
+    world: World,
+    session_factory: async_sessionmaker[AsyncSession],
+    engine: AsyncEngine,
+    floor: dict[str, Any],
+    make_agent: Factory,
+    make_task: Factory,
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(logging.getLogger("app.executor.runner"), "disabled", False)  # alembic's fileConfig turns it off
+    agent = await make_agent(floor["id"])
+    task = await make_task(agent["id"])
+    flaky = DatabaseDownAtFirst(engine, failures=3)
+    executor = Executor(session_factory, cast(AsyncEngine, flaky), ScriptedWorker(), replace(FAST, db_retry=0.05))
+    with caplog.at_level(logging.INFO, logger="app.executor.runner"):
+        await executor.start()
+        try:
+            await until(lambda: flaky.attempts >= 2)
+            assert not executor.active
+            await until(lambda: executor.active)
+            await until(world.is_task(task["id"], TaskStatus.NEEDS_REVIEW))
+        finally:
+            await executor.stop()
+
+    assert flaky.attempts == 4
+    messages = [r.getMessage() for r in caplog.records]
+    assert sum("database unreachable" in m for m in messages) == 1
+    assert any("database reachable again" in m for m in messages)
+    assert not any("executor crashed" in m for m in messages)
+
+
+async def test_executor_stops_while_the_database_is_down(
+    session_factory: async_sessionmaker[AsyncSession], engine: AsyncEngine
+) -> None:
+    flaky = DatabaseDownAtFirst(engine, failures=10**6)
+    executor = Executor(session_factory, cast(AsyncEngine, flaky), ScriptedWorker(), replace(FAST, db_retry=0.05))
+    await executor.start()
+    await until(lambda: flaky.attempts >= 3)
+    await asyncio.wait_for(executor.stop(), 1)
+    assert not executor.active
+
+
+def test_only_connection_problems_are_retried() -> None:
+    assert db_unreachable(ConnectionRefusedError())
+    assert db_unreachable(TimeoutError())
+    assert db_unreachable(OperationalError("SELECT 1", {}, Exception("server closed the connection")))
+    assert not db_unreachable(RuntimeError("boom"))
+    assert not db_unreachable(IntegrityError("INSERT", {}, Exception("duplicate key")))
 
 
 async def test_new_task_brings_an_agent_back_after_leaving(
