@@ -50,6 +50,9 @@ class RunRead(ORMModel):
     output_tokens: int
     status: RunStatus
     error: str | None
+    """In English; `error_code` + `error_params` let the interface show it in the chosen language."""
+    error_code: str | None = None
+    error_params: dict[str, object] | None = None
     output: str
     sources: list[str]
     activity: list[dict[str, object]]

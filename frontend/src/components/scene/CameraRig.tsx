@@ -70,7 +70,7 @@ export function CameraRig({ home, picks }: { home: CameraHome; picks: Pick[] }) 
     if (ctl && follow !== null) void ctl.zoomTo(Math.max(ctl.camera.zoom, homeRef.current.zoom * CAMERA.focusZoom), true);
   }, [follow]);
 
-  // "Следить": the orbit target glides after the agent (or their car); at the desk it rests on the desk.
+  // «Follow»: the orbit target glides after the agent (or their car); at the desk it rests on the desk.
   useFrame(() => {
     const ctl = controls.current;
     const id = useUiStore.getState().follow;

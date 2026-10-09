@@ -181,7 +181,7 @@ class Executor:
             await s.execute(
                 update(Run)
                 .where(Run.status.in_([RunStatus.RUNNING, RunStatus.WAITING]))
-                .values(status=RunStatus.INTERRUPTED, finished_at=now(), error="Interrupted by a server restart")
+                .values(status=RunStatus.INTERRUPTED, finished_at=now(), error="Interrupted by a server restart", error_code="interrupted")
             )
             await s.commit()
 
@@ -261,7 +261,7 @@ class Executor:
             elif nxt is not None:
                 await self._work(agent_id, nxt.id)
             elif leave_at is not None and status in (AgentStatus.IDLE, AgentStatus.WAITING_REVIEW):
-                # Let go with «Отпустить всех»: leaves at the planned time (nothing to work on, so allowed).
+                # Let go with «Release all»: leaves at the planned time (nothing to work on, so allowed).
                 due = (leave_at - now()).total_seconds()
                 if due <= 0:
                     await self._set_status(agent_id, AgentStatus.LEAVING, expected=status)
@@ -518,6 +518,8 @@ class Executor:
             else:
                 run.status = RunStatus.FAILED
                 run.error = str(outcome) if isinstance(outcome, StageError) else f"{type(outcome).__name__}: {outcome}"
+                if isinstance(outcome, StageError) and outcome.code:
+                    run.error_code, run.error_params = outcome.code, dict(outcome.params)
                 task = await self._lock_task(s, task_id)
                 if task is not None and task.status == TaskStatus.IN_PROGRESS:
                     apply_transition(task, TaskStatus.FAILED, now())

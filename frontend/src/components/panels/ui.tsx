@@ -1,6 +1,7 @@
 "use client";
 
 import { type ButtonHTMLAttributes, type ReactNode, useState } from "react";
+import { currentLang, formatters, useT } from "@/lib/i18n";
 
 /** Right panel width; the HUD keeps clear of it while it is open. */
 export const PANEL_WIDTH = 420;
@@ -52,6 +53,7 @@ export function Button({ variant = "outline", busy, disabled, className = "", ch
 
 /** Two-step button for destructive actions: the first click asks, the second does. */
 export function ConfirmButton({ label, question, onConfirm, busy }: { label: string; question: string; onConfirm: () => void; busy?: boolean }) {
+  const t = useT();
   const [asking, setAsking] = useState(false);
   if (!asking)
     return (
@@ -70,10 +72,10 @@ export function ConfirmButton({ label, question, onConfirm, busy }: { label: str
           onConfirm();
         }}
       >
-        Да
+        {t("common.yes")}
       </Button>
       <Button variant="ghost" className="!px-2 !py-0.5" onClick={() => setAsking(false)}>
-        Нет
+        {t("common.no")}
       </Button>
     </div>
   );
@@ -121,7 +123,9 @@ export function Empty({ children }: { children: ReactNode }) {
   return <p className="rounded-lg border border-dashed border-line px-3 py-2.5 text-xs text-ink/45">{children}</p>;
 }
 
-export function CloseButton({ onClick, label = "Закрыть" }: { onClick: () => void; label?: string }) {
+export function CloseButton({ onClick, label }: { onClick: () => void; label?: string }) {
+  const t = useT();
+  label ??= t("common.close");
   return (
     <button
       type="button"
@@ -158,6 +162,6 @@ export function PanelShell({ eyebrow, title, subtitle, onClose, children, testId
   );
 }
 
-const dateFmt = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
-export const formatDate = (iso: string | null) => (iso ? dateFmt.format(new Date(iso)) : "—");
-export const formatNumber = (n: number) => n.toLocaleString("ru-RU");
+/** Dates and numbers in the chosen language (components showing them also use `useT`, so they re-render on a switch). */
+export const formatDate = (iso: string | null) => formatters(currentLang()).date(iso);
+export const formatNumber = (n: number) => formatters(currentLang()).number(n);

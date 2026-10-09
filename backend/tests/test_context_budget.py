@@ -103,8 +103,10 @@ async def test_an_answer_that_cannot_fit_even_without_thinking_fails_with_the_nu
 
     assert len(ollama.requests) == 2
     message = str(err.value)
-    assert "не поместился в окно контекста модели (16384 токенов)" in message
-    assert "вход 9573 токенов" in message and "6810" in message and "OLLAMA_NUM_CTX" in message
+    assert "did not fit into the model's context window (16384 tokens)" in message
+    assert "9573 tokens of input" in message and "6810" in message and "OLLAMA_NUM_CTX" in message
+    assert err.value.code == "context_full_thinking"
+    assert err.value.params == {"num_ctx": 16384, "input": 9573, "output": 6810}
 
 
 async def test_a_full_window_is_also_recognised_by_the_token_counts() -> None:
@@ -122,4 +124,5 @@ async def test_an_empty_answer_with_room_left_says_what_happened() -> None:
         await LlmWorker(llm_settings(), ollama.transport()).run(stage_input(TaskStage.PLAN), RecordingReport())
 
     assert len(ollama.requests) == 2
-    assert "Модель закончила ответ, не написав текста (вход 1200 токенов, вывод 40, только размышления) (попыток: 2)" == str(err.value)
+    assert "The model finished without writing any text (1200 tokens of input, 40 of output, thinking only) (attempts: 2)" == str(err.value)
+    assert (err.value.code, err.value.params) == ("no_text_thinking", {"input": 1200, "output": 40, "attempts": 2})

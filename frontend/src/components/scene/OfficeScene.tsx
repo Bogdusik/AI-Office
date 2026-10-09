@@ -7,6 +7,7 @@ import { buildScene, buildingLayout, cameraHome, rectCenter, rectSize, siteLayou
 import { PALETTE } from "@/scene/palette";
 import { isFloorVisible, useUiStore } from "@/store/useUiStore";
 import { useWorldStore } from "@/store/useWorldStore";
+import { useT } from "@/lib/i18n";
 import { Building, toFloorData } from "./Building";
 import { CameraRig } from "./CameraRig";
 import { DevProbe } from "./DevProbe";
@@ -27,7 +28,8 @@ function World({ world }: { world: WorldState }) {
   const life = useUiStore((s) => s.life);
   const animated = animation && !preview;
   const living = animated && life;
-  const floors = useMemo(() => toFloorData(world, preview, animated, living), [world, preview, animated, living]);
+  const t = useT();
+  const floors = useMemo(() => toFloorData(world, preview, animated, living, t), [world, preview, animated, living, t]);
   const serverBusy = world.stats.model_busy;
   const scene = useMemo(() => buildScene(floors, (n) => isFloorVisible(n, selected), { serverBusy, liveStaff: living }), [floors, selected, serverBusy, living]);
   const viewport = useThree((s) => s.size);

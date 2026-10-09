@@ -2,6 +2,7 @@
 
 import { PANEL_WIDTH } from "@/components/panels/ui";
 import { useRightPanelOpen } from "@/components/panels/RightPanel";
+import { useT } from "@/lib/i18n";
 import { useUiStore } from "@/store/useUiStore";
 import { ApiStatus } from "./ApiStatus";
 import { FloorControls, PreviewBadge } from "./Controls";
@@ -15,6 +16,7 @@ import { StageRibbon } from "./StageRibbon";
 const GAP = 16;
 
 function DirectorButton() {
+  const t = useT();
   const select = useUiStore((s) => s.select);
   const setDirectorOpen = useUiStore((s) => s.setDirectorOpen);
   return (
@@ -31,7 +33,7 @@ function DirectorButton() {
         <rect x="2.5" y="3" width="11" height="10" rx="1.5" />
         <path d="M2.5 6.5h11M6 9.5h4" strokeLinecap="round" />
       </svg>
-      Кабинет директора
+      {t("hud.director")}
     </button>
   );
 }

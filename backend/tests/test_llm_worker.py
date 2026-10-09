@@ -69,7 +69,7 @@ async def test_concurrency_setting_allows_parallel_requests() -> None:
 async def test_timeout_retries_once_then_fails() -> None:
     ollama = FakeOllama([chunks("too slow")], delay=0.5)
     worker = LlmWorker(llm_settings(stage_timeout=0.1, retries=1), ollama.transport())
-    with pytest.raises(StageTimeout, match=r"не ответила за 0\.1 с \(попыток: 2\)"):
+    with pytest.raises(StageTimeout, match=r"did not answer within 0\.1 s \(attempts: 2\)"):
         await worker.run(stage_input(), RecordingReport())
     assert len(ollama.requests) == 2
     assert ollama.closed == 2
@@ -84,13 +84,14 @@ async def test_server_error_is_retried_and_can_recover() -> None:
 
 async def test_server_error_twice_fails_with_details() -> None:
     ollama = FakeOllama([500, 503])
-    with pytest.raises(StageError, match=r"Ollama вернула ошибку 503.*\(попыток: 2\)"):
+    with pytest.raises(StageError, match=r"Ollama returned an error 503.*\(attempts: 2\)") as err:
         await LlmWorker(llm_settings(), ollama.transport()).run(stage_input(), RecordingReport())
+    assert err.value.code == "ollama_error" and err.value.params["status"] == 503 and err.value.params["attempts"] == 2
 
 
 async def test_missing_model_is_not_retried() -> None:
     ollama = FakeOllama([404])
-    with pytest.raises(ModelMissing, match=r"Модель «qwen3\.8:27b» не скачана в Ollama\. Выполните: ollama pull qwen3\.8:27b"):
+    with pytest.raises(ModelMissing, match=r"Model “qwen3\.8:27b” is not downloaded in Ollama\. Run: ollama pull qwen3\.8:27b"):
         await LlmWorker(llm_settings(), ollama.transport()).run(stage_input(), RecordingReport())
     assert len(ollama.requests) == 1
 
@@ -100,14 +101,14 @@ async def test_ollama_down_gives_a_clear_message() -> None:
         raise httpx.ConnectError("connection refused", request=request)
 
     ollama = FakeOllama([refuse])
-    with pytest.raises(OllamaUnavailable, match=r"Ollama не отвечает по адресу http://ollama\.test\. Запустите Ollama"):
+    with pytest.raises(OllamaUnavailable, match=r"Ollama is not answering at http://ollama\.test\. Start Ollama"):
         await LlmWorker(llm_settings(), ollama.transport()).run(stage_input(), RecordingReport())
     assert len(ollama.requests) == 2
 
 
 async def test_empty_answer_is_an_error() -> None:
     ollama = FakeOllama([[{"message": {"content": ""}, "done": True, "eval_count": 3}]])
-    with pytest.raises(StageError, match=r"закончила ответ, не написав текста \(вход 0 токенов, вывод 3\)"):
+    with pytest.raises(StageError, match=r"finished without writing any text \(0 tokens of input, 3 of output\)"):
         await LlmWorker(llm_settings(retries=0), ollama.transport()).run(stage_input(), RecordingReport())
 
 

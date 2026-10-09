@@ -69,7 +69,7 @@ export type AgentState = {
   awaiting_review: number;
   /** null: can be sent home now. */
   release_blocked: ReleaseBlocker | null;
-  /** Let go with «Отпустить всех»: leaves at this time (people go one after another). */
+  /** Let go with «Release all»: leaves at this time (people go one after another). */
   leave_at: string | null;
 };
 
@@ -161,7 +161,10 @@ export type WebStep = {
   kind: "search" | "fetch" | "jobs" | "job";
   target: string;
   status: "running" | "done" | "failed";
+  /** In English; `detail_code` + `detail_params` give it in the interface language (`stepDetail` in the dictionaries). */
   detail?: string;
+  detail_code?: string;
+  detail_params?: Record<string, string | number>;
   source?: number;
   url?: string;
   /** Job search: vacancies found (before the filter), excluded by it and closed according to the source. */
@@ -221,7 +224,10 @@ export type Run = {
   input_tokens: number;
   output_tokens: number;
   status: string;
+  /** In English; `error_code` + `error_params` give it in the interface language (`stageError` in the dictionaries). */
   error: string | null;
+  error_code?: string | null;
+  error_params?: Record<string, unknown> | null;
   output: string;
   started_at: string;
   finished_at: string | null;
@@ -246,6 +252,9 @@ export type LlmStatus = {
   available: boolean | null;
   loaded: boolean | null;
   message: string | null;
+  /** `modelStatus.<code>` in the dictionaries. */
+  code?: "fake_worker" | "ollama_down" | "model_missing" | null;
+  params?: Record<string, string>;
 };
 
 export type ModelUser = { agent_id: number; name: string; title: string; task_title: string; stage: TaskStage; since: string };

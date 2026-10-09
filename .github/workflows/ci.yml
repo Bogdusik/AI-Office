@@ -63,4 +63,5 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm run check:layout
+      - run: npm run check:i18n
       - run: npm run build

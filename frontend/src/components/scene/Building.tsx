@@ -1,6 +1,7 @@
 "use client";
 
 import type { WorldState } from "@/lib/api";
+import type { T } from "@/lib/i18n";
 import { activityCaption, agentTag } from "@/lib/labels";
 import { type FloorData, type SceneSpec, presence } from "@/scene/layout";
 import { useUiStore } from "@/store/useUiStore";
@@ -14,7 +15,7 @@ import { Walls } from "./parts/Walls";
 import { inOffice, onTrip } from "./motion/Motion";
 
 /** `animated`: agents on an animated trip are left out of the static scene (the motion layer draws them). */
-export function toFloorData(world: WorldState, preview: boolean, animated: boolean, living: boolean): FloorData[] {
+export function toFloorData(world: WorldState, preview: boolean, animated: boolean, living: boolean, t: T): FloorData[] {
   return world.floors.map((f) => ({
     id: f.id,
     number: f.number,
@@ -30,9 +31,9 @@ export function toFloorData(world: WorldState, preview: boolean, animated: boole
       roleKey: a.role_key,
       title: a.title,
       ...presence(a.status, preview, animated && onTrip(a), living && inOffice(a)),
-      // With office life the desk plaque says what is really going on ("Пишет черновик", "Читает gov.uk").
-      status: (living && inOffice(a) ? activityCaption(a) : null) ?? agentTag(a).label,
-      statusColor: agentTag(a).color,
+      // With office life the desk plaque says what is really going on ("Writing a draft", "Reading gov.uk").
+      status: (living && inOffice(a) ? activityCaption(t, a) : null) ?? agentTag(t, a).label,
+      statusColor: agentTag(t, a).color,
     })),
   }));
 }
