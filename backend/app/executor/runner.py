@@ -8,12 +8,14 @@ A Postgres advisory lock makes sure only one executor runs against a database.
 """
 
 import asyncio
+import contextlib
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Literal
 
 from sqlalchemy import func, or_, select, update
+from sqlalchemy.exc import DBAPIError, InterfaceError, OperationalError
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, AsyncSession, async_sessionmaker
 
 from app.events import Event, EventBus, publish_agent, publish_artifact, publish_progress, publish_run, publish_task
@@ -55,6 +57,8 @@ class Timings:
     """A task that comes this long into a departure or sooner turns the agent back (the car has not moved yet)."""
     return_extra: float = 12.0
     """A return lasts the time already spent leaving plus this."""
+    db_retry: float = 5.0
+    """While the database cannot be reached, the executor tries again this often."""
 
     def return_seconds(self, origin: datetime, started: datetime) -> float:
         """Length of a return trip; the scene computes the same (`trips.ts` → `durationOf`)."""
@@ -112,6 +116,16 @@ def now() -> datetime:
     return datetime.now(UTC)
 
 
+def db_unreachable(err: BaseException) -> bool:
+    """The database is down, restarting or the connection dropped (not a bug in a query)."""
+    if isinstance(err, OSError | InterfaceError | OperationalError):
+        return True
+    if isinstance(err, DBAPIError):
+        sqlstate = getattr(err.orig, "sqlstate", None) or ""
+        return err.connection_invalidated or isinstance(err.orig, OSError) or sqlstate.startswith(("08", "57P"))
+    return False
+
+
 class Executor:
     def __init__(
         self,
@@ -132,6 +146,7 @@ class Executor:
         self._main: asyncio.Task[None] | None = None
         self.active = False
         """True while this instance holds the lock and runs agents."""
+        self._served = False
 
     # ---------- lifecycle ----------
 
@@ -146,19 +161,41 @@ class Executor:
             self._main = None
 
     async def _run(self) -> None:
+        """Serves until stopped; while the database cannot be reached, tries again every `db_retry` seconds."""
+        down = False
+        while not self._stop.is_set():
+            self._served = False
+            try:
+                await self._serve(recovered=down)
+                return
+            except Exception as err:
+                if not db_unreachable(err):
+                    raise
+                if self._served:
+                    down = False
+                if not down:
+                    log.warning("executor: database unreachable (%s), retrying every %s s", err or type(err).__name__, self._t.db_retry)
+                down = True
+            if await self._sleep(self._t.db_retry):
+                return
+
+    async def _serve(self, *, recovered: bool) -> None:
         async with self._engine.connect() as conn:
             while not await self._try_lock(conn):
                 if await self._sleep(self._t.tick):
                     return
-            self.active = True
+            if recovered:
+                log.info("executor: database reachable again, starting")
+            self.active = self._served = True
             try:
                 await self._recover()
                 async with self._bus.subscribe() as events:
                     while not self._stop.is_set():
                         await self._sync_workers()
                         await self._next_events(events)
-            except Exception:
-                log.exception("executor crashed")
+            except Exception as err:
+                if not db_unreachable(err):
+                    log.exception("executor crashed")
                 raise
             finally:
                 self.active = False
@@ -166,8 +203,9 @@ class Executor:
                     worker.cancel()
                 await asyncio.gather(*self._workers.values(), return_exceptions=True)
                 self._workers.clear()
-                await conn.scalar(select(func.pg_advisory_unlock(LOCK_KEY)))
-                await conn.commit()
+                with contextlib.suppress(OSError, DBAPIError):
+                    await conn.scalar(select(func.pg_advisory_unlock(LOCK_KEY)))
+                    await conn.commit()
 
     @staticmethod
     async def _try_lock(conn: AsyncConnection) -> bool:
