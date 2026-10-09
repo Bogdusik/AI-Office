@@ -19,8 +19,8 @@ UI that makes the system's state obvious at a glance.
 | ![A result waiting for review; the authors wait on the lounge sofa](docs/screenshots/review.png) | ![Server room panel: Ollama, GPU, who uses the model, the queue, tokens](docs/screenshots/server-room.png) |
 | **Review.** Accept or request changes; agents waiting for review sit in the lounge. | **Server room.** Model, VRAM, GPU load, the model queue and token usage. |
 
-The screenshots use the fictional demo profile (`python -m app.seed --demo`). The interface is in Russian; agents write
-in English unless a task asks otherwise.
+The screenshots use the fictional demo profile (`python -m app.seed --demo`). The interface is in English by default
+(Russian is one click away: EN | RU in the HUD); agents write in English unless a task asks otherwise.
 
 ## What it does
 
@@ -44,7 +44,7 @@ in English unless a task asks otherwise.
 - **A living building.** Cars queue at the barriers, people wait at the card reader and share the lift (capacity 4),
   walk to the kitchen while the model is busy, sit in the lounge while waiting for review or when they are free, chat,
   and stroll. Agents stay in the office when their work is done and take a new task at once; they go home only when you
-  let them («Отпустить домой», «Отпустить всех» lets people go a few seconds apart), and a task that comes while one is
+  let them (Send home for one; Release all lets people go a few seconds apart), and a task that comes while one is
   still walking to the car turns them back to the desk. Click any agent, desk, parking spot or the server room to open
   its panel.
 
@@ -170,10 +170,10 @@ npm run dev
 ```
 
 Open http://localhost:3000. Two agents with queued tasks drive in and start working; the writer is already waiting for
-your review in the lounge. Open «Кабинет директора» (top right) for the review queue, or click an agent.
+your review in the lounge. Open Director's office (top right) for the review queue, or click an agent.
 
 `python -m app.seed` without `--demo` creates only the building and the six agents with an empty profile: that is the
-starting point for your own use. Fill in the profile in «Кабинет директора» → «Профиль».
+starting point for your own use. Fill in the profile in Director's office → Profile.
 
 ## Use a local model
 
@@ -191,13 +191,13 @@ LLM_RESERVE_TOKENS=3072
 ```
 
 `ollama pull qwen3:8b` first. Expect weaker drafts and less reliable research than with the 27B model. A single agent
-can use a different model: «Изменить» in its panel → «Модель». How the default was chosen: `docs/model-benchmark.json`.
+can use a different model: Edit in its panel → Model. How the default was chosen: `docs/model-benchmark.json`.
 
 **Web search.** Set `SEARXNG_SECRET` in the root `.env` (any long random string) and run `docker compose up -d`, which
-also starts SearXNG on `127.0.0.1:8888`. Agents with «Доступ в интернет» then search and read pages during the
+also starts SearXNG on `127.0.0.1:8888`. Agents with Internet access then search and read pages during the
 research stage.
 
-**Job search.** The job search agent has the «Поиск вакансий» tool (an agent setting: «Изменить» → «Поиск вакансий»).
+**Job search.** The job search agent has the Job search tool (an agent setting: Edit → Job search).
 Get free keys at [developer.adzuna.com](https://developer.adzuna.com) and
 [reed.co.uk/developers/jobseeker](https://www.reed.co.uk/developers/jobseeker) and put them into `backend/.env`:
 
@@ -233,12 +233,12 @@ If PowerShell refuses to run scripts, run them as `powershell -ExecutionPolicy B
 
 ## Using it
 
-- Mouse: left drag rotates, right drag pans, the wheel zooms to the cursor; «Домой» returns to the default view.
+- Mouse: left drag rotates, right drag pans, the wheel zooms to the cursor; Home returns to the default view.
 - Click an agent, a free desk, a parking spot, the director's office or the server room to open its panel; Esc closes
-  the innermost layer. The HUD switches «Анимация» and «Жизнь офиса» turn movement off and keep everyone at their desks.
+  the innermost layer. The HUD switches Animation and Office life turn movement off and keep everyone at their desks.
 - `?preview=1` shows every agent at their desk and every car parked without touching the database.
-- Agents stay in the office after their work: «Отпустить домой» in an agent's panel, «Отпустить всех» in «Кабинет
-  директора» → «Команда». Someone with a task in progress, queued or sent back for changes cannot go (the disabled
+- Agents stay in the office after their work: Send home in an agent's panel, Release all in Director's
+  office → Team. Someone with a task in progress, queued or sent back for changes cannot go (the disabled
   button says why); tasks waiting for your review or paused do not keep anyone.
 - API docs: http://localhost:8000/docs, the whole API as Markdown for language models: http://localhost:8000/llms.txt.
   Health: http://localhost:8000/health.
@@ -247,20 +247,24 @@ If PowerShell refuses to run scripts, run them as `powershell -ExecutionPolicy B
 
 ```powershell
 cd backend; pytest                   # needs TEST_DATABASE_URL: a separate database, dropped and recreated on each run
-cd frontend; npm run lint; npm run check:layout; npm run build
+cd frontend; npm run lint; npm run check:layout; npm run check:i18n; npm run build
 ```
 
 CI (GitHub Actions) runs the same: pytest against a PostgreSQL service (plus migrations and the demo seed), ESLint,
-the layout checks and a production build.
+the layout checks, the translation check and a production build.
+
+`check:i18n` fails when Cyrillic appears in the frontend sources outside the Russian dictionary, or when the English
+and Russian dictionaries differ in keys or placeholders. The backend sends messages the director sees in English with a
+code and parameters; the interface translates the code.
 
 ## Limitations
 
 - Local and single-user by design: no authentication. Do not expose the backend to a network.
-- The interface is in Russian, desktop only.
+- Desktop only. Interface in English and Russian; agents' results are in the language the task asks for.
 - Only Ollama is wired up as a provider; the data model already has a field for others.
 - Without a GPU only the fake executor is practical.
 - In the parking aisle, arriving and leaving cars do not give way to each other yet: a car reversing out while another
-  drives in can briefly overlap. The exit barrier is the bottleneck: «Отпустить всех» lets people go 5 s apart; agents
+  drives in can briefly overlap. The exit barrier is the bottleneck: Release all lets people go 5 s apart; agents
   released by hand within a second or two of each other may have to drive off faster than usual to keep every trip at
   exactly its duration.
 - An agent who turns back on the way home is often back at the desk a few seconds before work starts: the return
