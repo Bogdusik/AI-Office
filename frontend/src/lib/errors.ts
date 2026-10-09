@@ -1,75 +1,65 @@
 import { ApiError, type TaskStatus, type ValidationIssue } from "@/lib/api";
-import { TASK_STATUS } from "@/lib/labels";
+import type { Key, T } from "@/lib/i18n";
 
-const status = (s: string) => TASK_STATUS[s as TaskStatus]?.label ?? s;
+const status = (t: T, s: string) => t(`taskStatus.${s as TaskStatus}`);
 
-/** Backend messages (409/422/404) → what the director should read. Order matters: first match wins. */
-const MESSAGES: [RegExp, (...m: string[]) => string][] = [
-  [/^Cannot move task from '(\w+)' to '(\w+)'/, (a, b) => `Нельзя перевести задачу из «${status(a)}» в «${status(b)}». Статус мог измениться — данные обновлены.`],
-  [/^Cannot resume a task in status '(\w+)'/, (a) => `Продолжить можно только задачу на паузе, а эта сейчас «${status(a)}».`],
-  [/^Cannot retry a task in status '(\w+)'/, (a) => `Повторить можно только задачу с ошибкой, а эта сейчас «${status(a)}».`],
-  [/^A director comment is required/, () => "Чтобы вернуть задачу, напишите комментарий: что исправить."],
-  [/^Floor is full \((\d+)\/(\d+)\)/, (a, b) => `Этаж заполнен: заняты все ${b} мест.`],
-  [/^Role key '(.+)' is already used/, (k) => `role_key «${k}» уже занят другим сотрудником.`],
-  [/^Agent has (\d+) unfinished task/, (n) => `У сотрудника незавершённых задач: ${n}. Отмените или завершите их перед архивированием.`],
-  [/^Agent \d+ is archived/, () => "Сотрудник уже в архиве."],
-  [/^Desk (\d+) on floor (\d+) is taken/, (d, f) => `Место ${Number(d) + 1} на этаже ${f} уже занято.`],
-  [/^Desk \d+ does not exist/, () => "Такого места на этаже нет."],
-  [/^Agents can only work on office floors/, () => "Сотрудники могут работать только на офисных этажах."],
-  [/^The reception floor cannot be deleted/, () => "Этаж ресепшена удалить нельзя."],
-  [/^The floor with the director's office cannot be deleted/, () => "Этаж с кабинетом директора удалить нельзя."],
-  [/^Floor has (\d+) agent/, (n) => `На этаже работают сотрудники (${n}). Сначала переведите или архивируйте их.`],
-  [/^Floor number (\d+) is already taken/, (n) => `Этаж ${n} уже существует.`],
-  [/^Capacity \d+ is below/, () => "Вместимость меньше, чем сотрудников на этаже."],
-  [/^The building already has a reception/, () => "Ресепшен в здании уже есть."],
-  [/capacity must be/, () => "Вместимость не подходит для этого типа этажа."],
-  [/not found$/, () => "Объект не найден: возможно, его уже удалили. Данные обновлены."],
+/** Backend messages (409/422/404, in English) → what the director should read. Order matters: first match wins. */
+const MESSAGES: [RegExp, (t: T, ...m: string[]) => string][] = [
+  [/^Cannot move task from '(\w+)' to '(\w+)'/, (t, a, b) => t("errors.move", { from: status(t, a), to: status(t, b) })],
+  [/^Cannot resume a task in status '(\w+)'/, (t, a) => t("errors.resume", { status: status(t, a) })],
+  [/^Cannot retry a task in status '(\w+)'/, (t, a) => t("errors.retry", { status: status(t, a) })],
+  [/^A director comment is required/, (t) => t("errors.commentRequired")],
+  [/^Floor is full \((\d+)\/(\d+)\)/, (t, _a, b) => t("errors.floorFull", { capacity: b })],
+  [/^Role key '(.+)' is already used/, (t, k) => t("errors.roleKeyTaken", { key: k })],
+  [/^Agent has (\d+) unfinished task/, (t, n) => t("errors.unfinished", { count: n })],
+  [/^Agent has tasks in progress/, (t) => t("errors.releaseTasks")],
+  [/^Agent is not in the office/, (t) => t("errors.releaseAway")],
+  [/^Agent is on the way/, (t) => t("errors.releaseOnTheWay")],
+  [/^Agent \d+ is archived/, (t) => t("errors.archived")],
+  [/^Desk (\d+) on floor (\d+) is taken/, (t, d, f) => t("errors.deskTaken", { desk: Number(d) + 1, floor: f })],
+  [/^Desk \d+ does not exist/, (t) => t("errors.noDesk")],
+  [/^Agents can only work on office floors/, (t) => t("errors.officeOnly")],
+  [/^The reception floor cannot be deleted/, (t) => t("errors.receptionFloor")],
+  [/^The floor with the director's office cannot be deleted/, (t) => t("errors.directorFloor")],
+  [/^Floor has (\d+) agent/, (t, n) => t("errors.floorHasAgents", { count: n })],
+  [/^Floor number (\d+) is already taken/, (t, n) => t("errors.floorExists", { number: n })],
+  [/^Capacity \d+ is below/, (t) => t("errors.capacityBelow")],
+  [/^The building already has a reception/, (t) => t("errors.receptionExists")],
+  [/capacity must be/, (t) => t("errors.capacityKind")],
+  [/not found$/, (t) => t("errors.gone")],
 ];
 
-const FIELDS: Record<string, string> = {
-  title: "Заголовок",
-  description: "Описание",
-  body: "Комментарий",
-  name: "Имя",
-  role_key: "role_key",
-  system_prompt: "Системный промт",
-  model: "Модель",
-  capacity: "Вместимость",
-  number: "Номер",
-  summary: "Кто я",
-  goal: "Цель",
-  constraints: "Ограничения",
-  notes: "Заметки",
-};
+const FIELDS = new Set(["title", "description", "body", "name", "role_key", "system_prompt", "model", "capacity", "number", "summary", "goal", "constraints", "notes"]);
 
-function issueText(i: ValidationIssue): string {
-  const field = FIELDS[String(i.loc.at(-1))] ?? String(i.loc.at(-1) ?? "");
+function issueText(t: T, i: ValidationIssue): string {
+  const raw = String(i.loc.at(-1) ?? "");
+  const field = FIELDS.has(raw) ? t(`fields.${raw}` as Key) : raw;
   const ctx = i.ctx ?? {};
-  const what =
+  const problem =
     i.type === "string_too_short" || i.type === "missing"
-      ? "нужно заполнить"
+      ? t("validation.required")
       : i.type === "string_too_long"
-        ? `не длиннее ${ctx.max_length} символов`
+        ? t("validation.maxLength", { max: String(ctx.max_length) })
         : i.type === "greater_than_equal"
-          ? `не меньше ${ctx.ge}`
+          ? t("validation.min", { min: String(ctx.ge) })
           : i.type === "less_than_equal"
-            ? `не больше ${ctx.le}`
+            ? t("validation.max", { max: String(ctx.le) })
             : i.msg;
-  return field ? `${field}: ${what}` : what;
+  return field ? t("validation.field", { field, problem }) : problem;
 }
 
-export function humanize(err: unknown): string {
-  if (!(err instanceof ApiError)) return "Нет связи с сервером. Проверьте, что backend запущен.";
+export function humanize(t: T, err: unknown): string {
+  if (!(err instanceof ApiError)) return t("errors.noServer");
   const { detail } = err;
-  if (Array.isArray(detail)) return detail.map(issueText).join("; ") || "Проверьте заполнение полей.";
+  if (Array.isArray(detail)) return detail.map((i) => issueText(t, i)).join("; ") || t("errors.checkFields");
   if (typeof detail === "string") {
     for (const [re, text] of MESSAGES) {
       const m = detail.match(re);
-      if (m) return text(...m.slice(1));
+      if (m) return text(t, ...m.slice(1));
     }
   }
-  if (err.status === 409) return "Действие сейчас недоступно: состояние изменилось. Данные обновлены.";
-  if (err.status === 422) return "Проверьте заполнение полей.";
-  if (err.status === 404) return "Объект не найден: возможно, его уже удалили.";
-  return `Ошибка сервера (${err.status}).`;
+  if (err.status === 409) return t("errors.conflict");
+  if (err.status === 422) return t("errors.checkFields");
+  if (err.status === 404) return t("errors.notFound");
+  return t("errors.server", { status: err.status });
 }

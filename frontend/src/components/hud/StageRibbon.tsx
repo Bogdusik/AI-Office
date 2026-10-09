@@ -1,6 +1,7 @@
 "use client";
 
-import { TASK_STATUS, WAITING_FOR_MODEL } from "@/lib/labels";
+import { useT } from "@/lib/i18n";
+import { WAITING_FOR_MODEL_COLOR, stageName, taskTag } from "@/lib/labels";
 import { RIBBON, ribbonState } from "@/lib/stages";
 import { useTasksStore } from "@/store/useTasksStore";
 import { findAgent } from "@/lib/world";
@@ -10,6 +11,7 @@ import { HudBlock } from "./HudBlock";
 
 /** Progress of the open task through its stages; hidden while no task is open. */
 export function StageRibbon() {
+  const t = useT();
   const taskId = useUiStore((s) => s.taskId);
   const task = useTasksStore((s) => s.tasks.find((t) => t.id === taskId));
   const world = useWorldStore((s) => s.world);
@@ -18,10 +20,10 @@ export function StageRibbon() {
   const waiting = ownerTask?.id === task.id && ownerTask.waiting_for_model;
 
   const { current, complete, halted } = ribbonState(task.status, task.stage);
-  const status = TASK_STATUS[task.status];
-  const noteColor = waiting ? WAITING_FOR_MODEL.color : status.color;
+  const status = taskTag(t, task.status);
+  const noteColor = waiting ? WAITING_FOR_MODEL_COLOR : status.color;
   const note = waiting
-    ? WAITING_FOR_MODEL.label.toLowerCase()
+    ? t("agentStatus.waiting_model").toLowerCase()
     : task.status === "paused" || task.status === "changes_requested" || halted
       ? status.label
       : null;
@@ -29,11 +31,11 @@ export function StageRibbon() {
   return (
     <HudBlock
       id="ribbon"
-      title="Этапы задачи"
+      title={t("hud.ribbon")}
       className="w-[560px] max-w-full"
       extra={<span className="truncate text-xs font-medium text-ink/70">{task.title}</span>}
     >
-      <ol className="flex items-start px-3.5 pt-1 pb-3" data-testid="stage-ribbon" aria-label="Этапы задачи">
+      <ol className="flex items-start px-3.5 pt-1 pb-3" data-testid="stage-ribbon" aria-label={t("hud.ribbon")}>
         {RIBBON.map((step, i) => {
           const passed = i < current || (complete && i === current);
           const isCurrent = i === current && !complete;
@@ -51,7 +53,7 @@ export function StageRibbon() {
                   </svg>
                 )}
               </span>
-              <span className={`text-center text-[10.5px] leading-tight ${isCurrent ? "font-semibold text-ink" : passed ? "text-ink/75" : "text-ink/40"}`}>{step.label}</span>
+              <span className={`text-center text-[10.5px] leading-tight ${isCurrent ? "font-semibold text-ink" : passed ? "text-ink/75" : "text-ink/40"}`}>{step.kind === "stage" ? stageName(t, step.id) : t(`taskStatus.${step.id}`)}</span>
               {isCurrent && note && (
                 <span className="rounded-full px-1.5 text-[9.5px] font-medium" style={{ backgroundColor: `${noteColor}22`, color: noteColor }} data-note={note}>
                   <span className="brightness-75">{note}</span>

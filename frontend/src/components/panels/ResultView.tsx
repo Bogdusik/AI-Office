@@ -2,12 +2,14 @@
 
 import { useState } from "react";
 import type { Artifact, Run, WebStep } from "@/lib/api";
-import { TASK_STAGE, freshnessNote } from "@/lib/labels";
+import { useT } from "@/lib/i18n";
+import { stageName, stepDetail } from "@/lib/labels";
 import { JobList } from "./JobList";
 import { Markdown } from "./Markdown";
 import { Button, Empty, formatDate } from "./ui";
 
 function CopyButton({ text }: { text: string }) {
+  const t = useT();
   const [copied, setCopied] = useState(false);
   const copy = async () => {
     try {
@@ -20,22 +22,23 @@ function CopyButton({ text }: { text: string }) {
   };
   return (
     <Button variant="outline" className="!px-2.5 !py-1 text-xs" onClick={copy} data-testid="copy-result">
-      {copied ? "Скопировано" : "Копировать"}
+      {copied ? t("result.copied") : t("result.copy")}
     </Button>
   );
 }
 
 /** Versions of the result with a switcher; the newest is shown first. */
 export function ResultView({ artifacts }: { artifacts: Artifact[] }) {
+  const t = useT();
   const [picked, setPicked] = useState<number | null>(null);
-  if (!artifacts.length) return <Empty>Результата пока нет.</Empty>;
+  if (!artifacts.length) return <Empty>{t("result.none")}</Empty>;
   const latest = artifacts.at(-1)!;
   const shown = artifacts.find((a) => a.version === picked) ?? latest;
 
   return (
     <div className="flex flex-col gap-2" data-testid="result">
       <div className="flex items-center gap-2">
-        <div role="tablist" aria-label="Версии результата" className="flex gap-0.5 rounded-full bg-ink/5 p-0.5">
+        <div role="tablist" aria-label={t("result.versions")} className="flex gap-0.5 rounded-full bg-ink/5 p-0.5">
           {artifacts.map((a) => (
             <button
               key={a.version}
@@ -51,7 +54,7 @@ export function ResultView({ artifacts }: { artifacts: Artifact[] }) {
         </div>
         <span className="flex-1 truncate text-[11px] text-ink/45">
           {formatDate(shown.created_at)}
-          {shown.version !== latest.version && " · не последняя версия"}
+          {shown.version !== latest.version && t("result.notLatest")}
         </span>
         <CopyButton text={shown.content} />
       </div>
@@ -76,9 +79,10 @@ function shortUrl(url: string): string {
 
 /** Numbered sources of a result; the numbers match the [n] marks in the text. */
 export function SourceList({ urls }: { urls: string[] }) {
+  const t = useT();
   return (
     <div className="flex flex-col gap-1" data-testid="sources">
-      <span className="text-[11px] font-medium text-ink/55">Источники</span>
+      <span className="text-[11px] font-medium text-ink/55">{t("result.sources")}</span>
       <ol className="flex flex-col gap-0.5 text-xs">
         {urls.map((url, i) => (
           <li key={url} className="flex gap-2">
@@ -95,30 +99,32 @@ export function SourceList({ urls }: { urls: string[] }) {
 
 /** What the agent searched and read on the web, step by step. */
 export function WebSteps({ steps }: { steps: WebStep[] }) {
+  const t = useT();
   if (!steps.length) return null;
   return (
     <ul className="flex flex-col gap-1" data-testid="web-steps">
       {steps.map((s) => {
         const failed = s.status === "failed";
         const running = s.status === "running";
-        const verb = s.kind === "search" ? (running ? "Ищет" : "Искал") : running ? "Читает" : "Прочитал";
+        const verb = s.kind === "search" ? (running ? t("steps.searching") : t("steps.searched")) : running ? t("steps.reading") : t("steps.read");
+        const detail = stepDetail(t, s);
         const row = `flex items-start gap-2 rounded-md px-2 py-1 text-xs ${failed ? "bg-signal-down/8 text-ink/70" : running ? "bg-[#2a9fd6]/10" : "bg-white/70"}`;
         if (s.kind === "jobs" || s.kind === "job") return <JobStep key={s.id} step={s} className={row} />;
         return (
           <li key={s.id} className={row} data-status={s.status} data-kind={s.kind}>
             <span aria-hidden>{s.kind === "search" ? "🔎" : "📄"}</span>
             <span className="min-w-0 flex-1">
-              <span className="font-medium text-ink">{failed ? (s.kind === "search" ? "Поиск не удался" : "Не открылась") : verb}: </span>
+              <span className="font-medium text-ink">{failed ? (s.kind === "search" ? t("steps.searchFailed") : t("steps.openFailed")) : verb}: </span>
               {s.kind === "fetch" && s.status === "done" && s.url ? (
                 <a href={s.url} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline" title={s.url}>
-                  {s.detail || shortUrl(s.url)}
+                  {detail || shortUrl(s.url)}
                 </a>
               ) : (
-                <span className="break-all text-ink/80">{s.kind === "fetch" ? shortUrl(s.target) : `«${s.target}»`}</span>
+                <span className="break-all text-ink/80">{s.kind === "fetch" ? shortUrl(s.target) : t("common.quoted", { text: s.target })}</span>
               )}
               {s.source !== undefined && <span className="ml-1 font-mono text-ink/45">[{s.source}]</span>}
-              {s.detail && s.kind === "search" && <span className="text-ink/50"> · {s.detail}</span>}
-              {failed && s.kind === "fetch" && s.detail && <span className="block text-ink/50">{s.detail}</span>}
+              {detail && s.kind === "search" && <span className="text-ink/50"> · {detail}</span>}
+              {failed && s.kind === "fetch" && detail && <span className="block text-ink/50">{detail}</span>}
             </span>
             {running && <span className="ml-auto shrink-0 animate-pulse text-[#2a9fd6]">…</span>}
           </li>
@@ -130,10 +136,15 @@ export function WebSteps({ steps }: { steps: WebStep[] }) {
 
 /** A job search ("found 18, excluded 2") or the reading of one job advert. */
 function JobStep({ step: s, className }: { step: WebStep; className: string }) {
+  const t = useT();
+  const detail = stepDetail(t, s);
   const running = s.status === "running";
   const failed = s.status === "failed";
   const search = s.kind === "jobs";
-  const verb = search ? (running ? "Ищет вакансии" : failed ? "Поиск вакансий не удался" : "Искал вакансии") : running ? "Читает вакансию" : failed ? "Не дочитал вакансию" : "Прочитал вакансию";
+  const verb = search
+    ? running ? t("steps.searchingJobs") : failed ? t("steps.jobSearchFailed") : t("steps.searchedJobs")
+    : running ? t("steps.readingJob") : failed ? t("steps.jobUnread") : t("steps.readJob");
+  const block = failed || s.detail_code === "job_not_eligible" || s.detail_code === "job_closed";
   return (
     <li className={className} data-status={s.status} data-kind={s.kind}>
       <span aria-hidden>{search ? "💼" : "📋"}</span>
@@ -144,12 +155,12 @@ function JobStep({ step: s, className }: { step: WebStep; className: string }) {
             {s.target}
           </a>
         ) : (
-          <span className="break-all text-ink/80">{search ? `«${s.target}»` : s.target}</span>
+          <span className="break-all text-ink/80">{search ? t("common.quoted", { text: s.target }) : s.target}</span>
         )}
-        {s.detail && (
-          <span className={failed || s.detail.startsWith("недоступна") || s.detail.startsWith("закрыта") ? "block text-ink/55" : "text-ink/50"}>
+        {detail && (
+          <span className={block ? "block text-ink/55" : "text-ink/50"}>
             {" "}
-            · {s.detail.startsWith("закрыта: ") ? `закрыта: ${freshnessNote(s.detail.slice(9))}` : s.detail}
+            · {detail}
           </span>
         )}
       </span>
@@ -160,11 +171,12 @@ function JobStep({ step: s, className }: { step: WebStep; className: string }) {
 
 /** The stage being worked on right now, with the text as it is being written. */
 export function LiveRun({ run }: { run: Run }) {
+  const t = useT();
   const waiting = run.status === "waiting";
   const step = run.activity.at(-1);
   const onWeb = step?.status === "running";
   const onJobs = onWeb && (step?.kind === "jobs" || step?.kind === "job");
-  const note = waiting ? "ждёт очереди к модели" : onJobs ? "ищет вакансии…" : onWeb ? "ищет в сети…" : run.output ? "пишет…" : "думает…";
+  const note = waiting ? t("steps.waitingQueue") : onJobs ? t("steps.searchingJobsNow") : onWeb ? t("steps.searchingWebNow") : run.output ? t("steps.writing") : t("steps.thinking");
   return (
     <div className="flex flex-col gap-2 rounded-xl border border-accent/30 bg-accent/5 p-3" data-testid="live-run" data-status={run.status}>
       <div className="flex items-center gap-2 text-xs">
@@ -172,7 +184,7 @@ export function LiveRun({ run }: { run: Run }) {
           {!waiting && <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent opacity-60" />}
           <span className={`relative inline-flex h-2 w-2 rounded-full ${waiting ? "bg-[#6f9bc6]" : "bg-accent"}`} />
         </span>
-        <span className="font-medium text-ink">Этап: {TASK_STAGE[run.stage]}</span>
+        <span className="font-medium text-ink">{t("steps.liveStage", { stage: stageName(t, run.stage) })}</span>
         <span className="text-ink/55">· {note}</span>
         {run.model && <span className="ml-auto font-mono text-[10px] text-ink/40">{run.model}</span>}
       </div>

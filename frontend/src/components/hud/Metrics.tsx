@@ -1,5 +1,6 @@
 "use client";
 
+import { useT } from "@/lib/i18n";
 import { IN_OFFICE } from "@/lib/labels";
 import { allAgents } from "@/lib/world";
 import { useWorldStore } from "@/store/useWorldStore";
@@ -20,16 +21,17 @@ function Metric({ id, label, value, total, color }: { id: string; label: string;
 
 /** Headline numbers; every one comes from /state, nothing is estimated on the client. */
 export function Metrics() {
+  const t = useT();
   const world = useWorldStore((s) => s.world);
   const agents = allAgents(world);
   const stats = world?.stats;
   return (
-    <HudBlock id="metrics" title="Показатели">
+    <HudBlock id="metrics" title={t("hud.metrics")}>
       <div className="grid grid-cols-2 gap-2 px-3 pb-3">
-        <Metric id="office" label="Сотрудников в офисе" value={world ? agents.filter((a) => IN_OFFICE.has(a.agent.status)).length : null} total={agents.length} color="#2fbf83" />
-        <Metric id="in-progress" label="Задач в работе" value={stats?.tasks_in_progress ?? null} color="#f0a020" />
-        <Metric id="review" label="Ждут моей проверки" value={stats?.awaiting_review ?? null} color="#8b6cf0" />
-        <Metric id="done-today" label="Завершено сегодня" value={stats?.done_today ?? null} color="#2d323b" />
+        <Metric id="office" label={t("hud.inOffice")} value={world ? agents.filter((a) => IN_OFFICE.has(a.agent.status)).length : null} total={agents.length} color="#2fbf83" />
+        <Metric id="in-progress" label={t("hud.inProgress")} value={stats?.tasks_in_progress ?? null} color="#f0a020" />
+        <Metric id="review" label={t("hud.awaitingReview")} value={stats?.awaiting_review ?? null} color="#8b6cf0" />
+        <Metric id="done-today" label={t("hud.doneToday")} value={stats?.done_today ?? null} color="#2d323b" />
       </div>
     </HudBlock>
   );
