@@ -37,7 +37,8 @@ async def test_model_available_and_loaded() -> None:
 async def test_model_missing() -> None:
     status = await llm_status(settings(), ollama(["other:7b"], []))
     assert not status.ok and status.ollama and status.available is False
-    assert status.message == "Модель «qwen3.8:27b» не скачана: ollama pull qwen3.8:27b"
+    assert status.message == "Model “qwen3.8:27b” is not downloaded: ollama pull qwen3.8:27b"
+    assert (status.code, status.params) == ("model_missing", {"model": "qwen3.8:27b"})
 
 
 async def test_untagged_name_means_latest() -> None:
@@ -51,4 +52,5 @@ async def test_ollama_down() -> None:
 
     status = await llm_status(settings(ollama_url="http://localhost:1"), httpx.MockTransport(refuse))
     assert not status.ok and status.ollama is False
-    assert status.message == "Ollama не отвечает по адресу http://localhost:1"
+    assert status.message == "Ollama is not answering at http://localhost:1"
+    assert (status.code, status.params) == ("ollama_down", {"url": "http://localhost:1"})

@@ -75,6 +75,9 @@ class Run(Base):
         server_default=RunStatus.RUNNING,
     )
     error: Mapped[str | None] = mapped_column(Text)
+    """The failure in English (API, logs); the interface shows `error_code` with `error_params` in its language."""
+    error_code: Mapped[str | None] = mapped_column(String(64))
+    error_params: Mapped[dict[str, object] | None] = mapped_column(JSONB)
     output: Mapped[str] = mapped_column(Text, default="", server_default="")
     sources: Mapped[list[str]] = mapped_column(JSONB, default=list, server_default="[]")
     activity: Mapped[list[dict[str, object]]] = mapped_column(JSONB, default=list, server_default="[]")

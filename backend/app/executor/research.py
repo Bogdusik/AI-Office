@@ -138,10 +138,12 @@ async def _web_search(tools: WebTools, report: StageReport, session: _Session, q
             results = await tools.search.search(query)
     except (SearchUnavailable, TimeoutError):
         session.searches_failed += 1
-        await _finish_step(report, session, step, "failed", "поиск недоступен")
+        await _finish_step(report, session, step, "failed", "search unavailable", detail_code="search_down")
         return "ERROR: web search is unavailable right now. Continue without it and say so in your notes."
     session.searches_ok += 1
-    await _finish_step(report, session, step, "done", f"{len(results)} результатов")
+    await _finish_step(
+        report, session, step, "done", f"{len(results)} results", detail_code="results", detail_params={"count": len(results)}
+    )
     return search_results_block(query, [(r.title, r.url, r.snippet) for r in results])
 
 
@@ -245,7 +247,7 @@ async def run_research(
         session.tokens_per_second = turn.tokens_per_second or session.tokens_per_second
         if final or not turn.tool_calls:
             if not turn.content:
-                raise StageError("Модель вернула пустые заметки исследования")
+                raise StageError("The model returned empty research notes", "empty_research_notes")
             return StageOutput(
                 text=_notes(session, turn.content, web=tools is not None),
                 input_tokens=session.input_tokens,

@@ -95,7 +95,7 @@ async def test_search_read_and_write_notes_with_numbered_sources() -> None:
         ("search", "fastapi postgresql", "done"),
         ("fetch", "https://docs.example/guide", "done"),
     ]
-    assert final_steps[0]["detail"] == "1 результатов"
+    assert (final_steps[0]["detail"], final_steps[0]["detail_code"], final_steps[0]["detail_params"]) == ("1 results", "results", {"count": 1})
     assert final_steps[1]["source"] == 1 and final_steps[1]["detail"] == "FastAPI and PostgreSQL"
     assert any(step[-1]["status"] == "running" for step in report.steps), "steps are reported while they run"
 
@@ -113,7 +113,7 @@ async def test_searxng_down_does_not_fail_the_stage() -> None:
     assert out.sources == ()
     [tool] = [m for m in ollama.requests[1]["messages"] if m["role"] == "tool"]
     assert tool["content"].startswith("ERROR: web search is unavailable")
-    assert report.steps[-1][-1]["status"] == "failed" and report.steps[-1][-1]["detail"] == "поиск недоступен"
+    assert report.steps[-1][-1]["status"] == "failed" and report.steps[-1][-1]["detail_code"] == "search_down"
 
 
 async def test_blocked_or_broken_pages_are_skipped() -> None:

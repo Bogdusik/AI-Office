@@ -16,7 +16,9 @@ def same_model(a: str, b: str) -> bool:
 
 async def llm_status(settings: Settings, transport: httpx.AsyncBaseTransport | None = None) -> LlmStatus:
     if settings.executor_worker != "llm":
-        return LlmStatus(worker=settings.executor_worker, ok=True, model=None, message="Фальшивый исполнитель: модель не используется")
+        return LlmStatus(
+            worker=settings.executor_worker, ok=True, model=None, message="Fake executor: no model is used", code="fake_worker"
+        )
     model = settings.ollama_model
     try:
         async with httpx.AsyncClient(base_url=settings.ollama_url, timeout=TIMEOUT_SECONDS, transport=transport) as client:
@@ -29,7 +31,9 @@ async def llm_status(settings: Settings, transport: httpx.AsyncBaseTransport | N
             ok=False,
             model=model,
             ollama=False,
-            message=f"Ollama не отвечает по адресу {settings.ollama_url}",
+            message=f"Ollama is not answering at {settings.ollama_url}",
+            code="ollama_down",
+            params={"url": settings.ollama_url},
         )
     available = any(same_model(m.get("name", ""), model) for m in tags)
     loaded = any(same_model(m.get("name", ""), model) for m in running)
@@ -41,5 +45,7 @@ async def llm_status(settings: Settings, transport: httpx.AsyncBaseTransport | N
         version=version,
         available=available,
         loaded=loaded,
-        message=None if available else f"Модель «{model}» не скачана: ollama pull {model}",
+        message=None if available else f"Model “{model}” is not downloaded: ollama pull {model}",
+        code=None if available else "model_missing",
+        params={} if available else {"model": model},
     )
