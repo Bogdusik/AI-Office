@@ -81,6 +81,8 @@ class JobTools:
     advert_chars: int = 6000
     stage_timeout: float = 900.0
     """Active time of a research stage that has only job tools (with web tools, theirs applies)."""
+    max_query_chars: int = 200
+    """Longest query or location a search may send."""
 
 
 def _exclusions(items: list[Exclusion]) -> list[dict[str, str]]:
@@ -145,6 +147,10 @@ class JobSession:
         if not entry.exclusions:
             entry.exclusions = check(entry.job.checked_text)
         return entry, "withdrawn" if entry.hidden and not was_hidden else "seen"
+
+    def urls(self) -> set[str]:
+        """Every address the job sources gave for the vacancies seen (pages the agent may open)."""
+        return {u for e in self.entries.values() for u in (e.job.url, *e.job.links.values()) if u}
 
     @property
     def excluded(self) -> list[_Entry]:

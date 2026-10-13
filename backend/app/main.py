@@ -50,6 +50,8 @@ def build_worker() -> StageWorker:
         max_pages=settings.web_max_pages,
         tool_timeout=settings.web_tool_timeout_seconds,
         stage_timeout=settings.llm_research_timeout_seconds,
+        max_url_chars=settings.web_max_url_chars,
+        max_query_chars=settings.web_max_query_chars,
     )
     fetcher = web.fetcher
     jobs = JobTools(
@@ -64,6 +66,7 @@ def build_worker() -> StageWorker:
         tool_timeout=settings.jobs_timeout_seconds * 2,
         max_results=settings.jobs_max_results,
         stage_timeout=settings.llm_research_timeout_seconds,
+        max_query_chars=settings.web_max_query_chars,
     )
     return LlmWorker(
         LlmSettings(
