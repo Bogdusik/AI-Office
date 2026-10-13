@@ -214,7 +214,7 @@ if (Test-Port $FrontendPort) {
     else { Fail "Port $FrontendPort is taken by $(Get-PortOwner $FrontendPort), but the page does not open." "If it is an old frontend, run .\stop.ps1; otherwise close that program, then run .\start.ps1 again." }
 } else {
     if (-not (Test-Path (Join-Path $Root 'frontend\node_modules'))) { Fail 'Frontend dependencies are not installed.' 'cd frontend; npm ci' }
-    $proc = Start-Hidden 'frontend' 'npm.cmd' @('run', 'dev', '--', '-p', $FrontendPort) (Join-Path $Root 'frontend')
+    $proc = Start-Hidden 'frontend' 'npm.cmd' @('run', 'dev', '--', '-p', $FrontendPort, '-H', '127.0.0.1') (Join-Path $Root 'frontend')
     Write-Host '   compiling the page (the first start takes up to 2 minutes)...'
     if (-not (Wait-Until { Test-Http $frontendUrl } 150 3 { $proc.HasExited })) {
         Show-LogTail (Join-Path $Logs 'frontend.err.log')
