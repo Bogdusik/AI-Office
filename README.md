@@ -166,7 +166,7 @@ uvicorn app.main:app --port 8000 --timeout-graceful-shutdown 2
 cd frontend
 Copy-Item .env.example .env.local    # cp .env.example .env.local
 npm ci
-npm run dev
+npm run dev -- -H 127.0.0.1           # only this computer, not the local network
 ```
 
 Open http://localhost:3000. Two agents with queued tasks drive in and start working; the writer is already waiting for

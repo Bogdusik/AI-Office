@@ -5,11 +5,13 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app.api.health import router as health_router
 from app.api.llms import router as llms_router
 from app.api.v1.router import api_router
 from app.core.config import get_settings
+from app.core.origin import OriginGuard
 from app.db.session import SessionLocal, engine
 from app.executor import Executor, FakeWorker, LlmSettings, LlmWorker, StageWorker, Timings
 from app.executor.job_tools import JobTools
@@ -118,6 +120,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(title="AI Office API", version="0.2.0", lifespan=lifespan)
 
+app.add_middleware(OriginGuard, allowed_origins=get_settings().cors_origins)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=get_settings().cors_origins,
@@ -125,6 +128,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+# outermost: a page that re-pointed its own domain at 127.0.0.1 (DNS rebinding) is refused before anything else
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=get_settings().allowed_hosts)
 
 
 @app.exception_handler(DomainError)
