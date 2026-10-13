@@ -71,6 +71,8 @@ await check("CSP keeps the page to itself and the API", () => {
     for (const v of values as string[]) assert.ok(!/^https?:$|^\*$|^https?:\/\/\*/.test(v), `${name} allows any host: ${v}`);
   }
   assert.ok(!csp["script-src"].includes("'unsafe-eval'"), "production allows eval");
+  assert.ok(csp["script-src"].includes("blob:"), "the scene labels load their workers from blob: URLs");
+  assert.ok(csp["worker-src"].includes("blob:"), "the scene labels run in blob: workers");
   assert.ok(contentSecurityPolicy("http://localhost:8000", true).includes("'unsafe-eval'"), "dev needs eval for fast refresh");
 });
 
