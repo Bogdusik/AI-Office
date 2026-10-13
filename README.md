@@ -231,6 +231,32 @@ background with their output in `logs/`. `stop.ps1` stops only this project's pr
 
 If PowerShell refuses to run scripts, run them as `powershell -ExecutionPolicy Bypass -File .\start.ps1`.
 
+## Backup and restore
+
+All data (profile, tasks, results) lives in the Docker volume of the database. `backup.ps1` saves a dated copy outside
+the project and keeps the latest 14:
+
+```powershell
+.ackup.ps1                                              # to %USERPROFILE%\Backups\AI-Office
+.ackup.ps1 -MirrorDir "$env:OneDrive\Backups\AI-Office" # also copy it to a second folder (another disk, cloud)
+```
+
+The folders can also be set once in the root `.env` (`BACKUP_DIR`, `BACKUP_MIRROR_DIR`). The script runs `pg_dump`
+inside the database container, checks that `pg_restore` can read the file and only then saves it as
+`ai_office-<yyyyMMdd-HHmmss>.dump`. To run it every day, add it to Windows Task Scheduler.
+
+To restore a copy, stop the backend (`.\stop.ps1`, then `docker compose up -d db`) and load the file over the current
+data:
+
+```powershell
+docker cp "$env:USERPROFILE\Backups\AI-Officei_office-20261013-210000.dump" ai-office-db:/tmp/restore.dump
+docker exec ai-office-db pg_restore -U ai_office -d ai_office --clean --if-exists /tmp/restore.dump
+docker exec ai-office-db rm /tmp/restore.dump
+```
+
+(`-U` and `-d` are `POSTGRES_USER` and `POSTGRES_DB` from the root `.env`.) Then start everything again with
+`.\start.ps1`.
+
 ## Using it
 
 - Mouse: left drag rotates, right drag pans, the wheel zooms to the cursor; Home returns to the default view.
