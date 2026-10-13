@@ -5,6 +5,7 @@ Everything is a pure function of `StageInput`, so it is easy to test. When the i
 context budget, sections are shortened in a fixed order and each cut is marked in the text.
 """
 
+import re
 from dataclasses import dataclass, replace
 from datetime import date
 
@@ -40,11 +41,14 @@ RULES = """# House rules
 STAGE_INSTRUCTIONS: dict[TaskStage, str] = {
     TaskStage.PLAN: (
         "Stage: plan. Write a short plan (3-7 bullet points) for producing the deliverable: what it must contain, "
-        "which facts from the profile and the task to use, and what information is missing. Do not write the deliverable yet."
+        "which facts from the profile and the task to use, and what information is missing. Do not write the deliverable yet. "
+        "The research stage reads this plan without the profile and searches the web with it: do not copy personal "
+        "details from the profile into the plan (the director's name, contacts, links, names of personal projects) "
+        "unless the search needs them; refer to them generically instead, e.g. \"the director's FastAPI project\"."
     ),
     TaskStage.RESEARCH: (
-        "Stage: research. Gather what the deliverable needs: requirements from the task, matching facts from the profile, "
-        "key points to cover. You have no web access yet: use only your own knowledge and the material given, do not "
+        "Stage: research. Gather what the deliverable needs: requirements from the task and key points to cover. "
+        "You have no web access yet: use only your own knowledge and the material given, do not "
         "include URLs, and end with the line `Sources: not verified (no web access yet).`"
     ),
     TaskStage.DRAFT: (
@@ -69,8 +73,14 @@ WEB_RESEARCH_INSTRUCTION = (
     "useful ones (at most {pages} pages; you have {calls} tool calls). Prefer official and primary sources. Then write "
     "concise research notes in Markdown bullet points: each fact from a page ends with that page's source number, "
     "e.g. [2] (the number is in the source attribute of its <web_content> tag); facts from your own knowledge are marked "
-    "(unverified). Add matching facts from the profile and the task. Do not copy whole pages and do not write a sources "
-    "list: it is added automatically."
+    "(unverified). Do not copy whole pages and do not write a sources list: it is added automatically.\n"
+    "{research_scope}"
+)
+
+RESEARCH_SCOPE = (
+    "The director's profile is not given at this stage; the draft stage matches your findings to it, so do not write "
+    "about the director. Never put personal details in a search query or a URL. `fetch_page` opens only addresses "
+    "from search results, from the task or from the job tools; any other address is refused."
 )
 
 JOBS_RESEARCH_INSTRUCTION = (
@@ -87,8 +97,8 @@ JOBS_RESEARCH_INSTRUCTION = (
 
 JOBS_ONLY_RESEARCH_INSTRUCTION = (
     "Stage: research with job tools. {jobs} Then write concise research notes in Markdown bullet points: for each job "
-    "worth considering, why it fits the profile and what is missing. Facts that do not come from the tools or the "
-    "profile are marked (unverified)."
+    "worth considering, what it asks for and what it offers. Facts that do not come from the tools or the task are "
+    "marked (unverified).\n{research_scope}"
 )
 
 JOBS_DELIVERABLE_NOTE = (
@@ -153,10 +163,10 @@ def _stage_instruction(data: StageInput, web: WebLimits | None, job_calls: int |
     instruction = STAGE_INSTRUCTIONS[data.stage]
     jobs = JOBS_RESEARCH_INSTRUCTION.format(calls=job_calls) if job_calls is not None else ""
     if data.stage == TaskStage.RESEARCH and web is not None:
-        instruction = WEB_RESEARCH_INSTRUCTION.format(calls=web.calls, pages=web.pages)
+        instruction = WEB_RESEARCH_INSTRUCTION.format(calls=web.calls, pages=web.pages, research_scope=RESEARCH_SCOPE)
         instruction = f"{instruction}\n\n{jobs}" if jobs else instruction
     elif data.stage == TaskStage.RESEARCH and jobs:
-        instruction = JOBS_ONLY_RESEARCH_INSTRUCTION.format(jobs=jobs)
+        instruction = JOBS_ONLY_RESEARCH_INSTRUCTION.format(jobs=jobs, research_scope=RESEARCH_SCOPE)
     elif data.stage in (TaskStage.DRAFT, TaskStage.SELF_CHECK) and data.jobs:
         flags = list(data.jobs.get("task_flags") or [])  # type: ignore[call-overload]
         if flags:
@@ -174,16 +184,26 @@ def _stage_instruction(data: StageInput, web: WebLimits | None, job_calls: int |
 def sections(
     data: StageInput, today: date | None = None, web: WebLimits | None = None, job_calls: int | None = None
 ) -> tuple[list[Section], list[Section]]:
-    """System and user sections in display order, with their cut order (the single place that defines priorities)."""
-    system = [
-        Section("Your role", data.agent.system_prompt.strip() or f"You are {data.agent.title}."),
-        Section("Director profile", _profile_text(data), cut_order=50),
-        Section("", RULES),
-    ]
+    """System and user sections in display order, with their cut order (the single place that defines priorities).
+
+    Research reads untrusted pages and adverts and sends queries out, so it gets no personal context: not the
+    profile, the director's comments, the previous result or other stages; only the task and this version's plan
+    (which the plan stage writes without personal details, and which carries the director's comments forward)."""
+    research = data.stage == TaskStage.RESEARCH
+    system = [Section("Your role", data.agent.system_prompt.strip() or f"You are {data.agent.title}.")]
+    if not research:
+        system.append(Section("Director profile", _profile_text(data), cut_order=50))
+    system.append(Section("", RULES))
     if today is not None:
         system.append(Section("Today", f"{today:%A, %d %B %Y}. Dates in the profile before today are in the past."))
     task = f"Title: {data.task.title}\n\n{data.task.description.strip()}".strip()
     user = [Section("Task", task, cut_order=90)]
+    if research:
+        plan = data.previous_stages.get(TaskStage.PLAN, "").strip()
+        if plan:
+            user.append(Section("Earlier stage: plan", plan, cut_order=40))
+        user.append(Section("Your stage", _stage_instruction(data, web, job_calls)))
+        return system, user
 
     comments = [c for c in data.comments if c.author == CommentAuthor.DIRECTOR]
     for i, c in enumerate(comments):
@@ -266,11 +286,25 @@ def build_messages(
     return [{"role": "system", "content": _render(system)}, {"role": "user", "content": _render(user)}]
 
 
+_DATA_TAG = re.compile(r"<\s*(/?)\s*(web_content|web_search_results|job_results|job_advert)", re.IGNORECASE)
+_MD_SPECIAL = re.compile(r"([\\`*_\[\]<>!])")
+
+
 def escape_tags(text: str) -> str:
-    """Page text cannot close or open our data tags (a page could try to break out of them)."""
-    for tag in ("web_content", "web_search_results", "job_results", "job_advert"):
-        text = text.replace(f"</{tag}", f"&lt;/{tag}").replace(f"<{tag}", f"&lt;{tag}")
-    return text
+    """Page text cannot close or open our data tags in any spelling (`</WEB_CONTENT>`, `< /web_content>`)."""
+    return _DATA_TAG.sub(lambda m: f"&lt;{m.group(1)}{m.group(2)}", text)
+
+
+def md_text(value: object, limit: int = 300) -> str:
+    """Untrusted text (a page title, a job field, a phrase from an advert) as plain Markdown text: one line, and
+    no characters that would turn it into an image, a link, HTML or emphasis."""
+    return _MD_SPECIAL.sub(r"\\\1", " ".join(str(value).split())[:limit])
+
+
+def md_url(url: object) -> str:
+    """An address as a Markdown autolink that nothing inside it can break out of."""
+    clean = "%20".join(str(url).split()).replace("<", "%3C").replace(">", "%3E")
+    return f"<{clean}>" if clean else ""
 
 
 def _attr(value: str) -> str:

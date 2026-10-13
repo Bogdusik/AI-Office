@@ -1,12 +1,37 @@
 "use client";
 
 import { useEffect } from "react";
+import { FPS_OPTIONS } from "@/lib/frameRate";
 import { LANGS, useLangStore, useT } from "@/lib/i18n";
 import { type FloorSelection, useUiStore } from "@/store/useUiStore";
 import { useWorldStore } from "@/store/useWorldStore";
 
 const pill =
   "rounded-full px-3.5 py-1.5 text-xs font-medium whitespace-nowrap tracking-wide transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
+
+/** 15 | 30 | 60: how often the scene is drawn (fewer frames leave the graphics card to the model). */
+function FpsSwitch() {
+  const t = useT();
+  const fps = useUiStore((s) => s.fps);
+  const setFps = useUiStore((s) => s.setFps);
+  return (
+    <div role="radiogroup" aria-label={t("hud.fpsChoice")} title={t("hud.fpsChoice")} className="flex items-center gap-0.5 rounded-full bg-ink/5 p-0.5" data-testid="fps-switch">
+      <span className="px-1.5 font-mono text-[9px] tracking-[0.14em] text-ink/45 uppercase">{t("hud.fps")}</span>
+      {FPS_OPTIONS.map((value) => (
+        <button
+          key={value}
+          type="button"
+          role="radio"
+          aria-checked={fps === value}
+          onClick={() => setFps(value)}
+          className={`rounded-full px-2 py-1 font-mono text-[10px] font-semibold transition ${fps === value ? "bg-white text-ink shadow-sm" : "text-ink/45 hover:text-ink"}`}
+        >
+          {value}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 /** EN | RU: the interface language, remembered in the browser (English until changed). */
 function LanguageSwitch() {
@@ -105,6 +130,7 @@ export function FloorControls() {
           {t("hud.life")}
         </button>
         <span className="mx-1 h-5 w-px bg-ink/10" />
+        <FpsSwitch />
         <LanguageSwitch />
     </div>
   );

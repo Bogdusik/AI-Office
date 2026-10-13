@@ -2,6 +2,7 @@
 
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { rehypeImagesAsLinks } from "@/lib/markdown";
 
 const components: Components = {
   h1: ({ children }) => <h1 className="mt-3 mb-2 text-base font-semibold text-ink first:mt-0">{children}</h1>,
@@ -43,12 +44,14 @@ const components: Components = {
 };
 
 const plugins = [remarkGfm];
+const rehypePlugins = [rehypeImagesAsLinks];
 
-/** Model output as Markdown (GitHub flavour: tables, strikethrough, task lists, autolinks); raw HTML is not rendered. */
+/** Model output as Markdown (GitHub flavour: tables, strikethrough, task lists, autolinks); raw HTML is not rendered,
+ * images are shown as links (never loaded). */
 export function Markdown({ text }: { text: string }) {
   return (
     <div className="text-sm text-ink/90 [overflow-wrap:anywhere]">
-      <ReactMarkdown remarkPlugins={plugins} components={components}>
+      <ReactMarkdown remarkPlugins={plugins} rehypePlugins={rehypePlugins} components={components}>
         {text}
       </ReactMarkdown>
     </div>

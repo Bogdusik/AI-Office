@@ -28,9 +28,10 @@ The screenshots use the fictional demo profile (`python -m app.seed --demo`). Th
   per agent at a time. Results are versioned Markdown with sources; rework starts from your comments and the previous
   version. Pause, resume and cancel at any moment.
 - **Local LLM.** Ollama with streaming and thinking on. A context budget keeps room for thinking and the whole answer
-  and trims the input in a fixed order (if the window still fills up, the call is repeated without thinking); one retry
-  after a timeout or a dropped stream; plain-language errors for the director (Ollama not running, model not pulled,
-  timed out). A failed task can be retried from the stage that failed.
+  and trims the input in a fixed order (if the window still fills up, the call is repeated without thinking). If
+  Ollama stops or restarts, work waits for it and goes on from the text already written instead of failing; a call
+  counts as stuck only when the model writes nothing for two minutes. Plain-language errors for the director (model
+  not pulled, stuck). A failed task can be retried from the stage that failed.
 - **Web research.** Agents with web access search through a local SearXNG instance and read public pages through a
   guarded fetcher; every claim in the result points to a numbered source.
 - **Job search.** The job search agent queries the official Adzuna and Reed APIs, merges duplicates across them and
@@ -105,8 +106,8 @@ overlaps, lift capacity, exact durations, no jump when someone turns back at any
 appear) without a browser.
 
 **A queue in front of the GPU.** A semaphore (`LLM_CONCURRENCY`, default 1) guards the model. A run is `waiting` until
-its request is really sent, then `running`. The stage timeout counts from sending, not from joining the queue, and the
-GPU slot is held per model call, never while a web tool runs. The queue is visible: waiting agents lean back, then go
+its request is really sent, then `running`. A call times out only when its stream goes silent, never while it waits
+in the queue, and the GPU slot is held per model call, never while a web tool runs. The queue is visible: waiting agents lean back, then go
 for coffee, and the server room lists who has the model and who is next.
 
 **A hard filter in code for job eligibility.** Whether a vacancy is out of reach (security clearance with a UK
@@ -166,7 +167,7 @@ uvicorn app.main:app --port 8000 --timeout-graceful-shutdown 2
 cd frontend
 Copy-Item .env.example .env.local    # cp .env.example .env.local
 npm ci
-npm run dev
+npm run dev -- -H 127.0.0.1           # only this computer, not the local network
 ```
 
 Open http://localhost:3000. Two agents with queued tasks drive in and start working; the writer is already waiting for
@@ -231,6 +232,32 @@ background with their output in `logs/`. `stop.ps1` stops only this project's pr
 
 If PowerShell refuses to run scripts, run them as `powershell -ExecutionPolicy Bypass -File .\start.ps1`.
 
+## Backup and restore
+
+All data (profile, tasks, results) lives in the Docker volume of the database. `backup.ps1` saves a dated copy outside
+the project and keeps the latest 14:
+
+```powershell
+.ackup.ps1                                              # to %USERPROFILE%\Backups\AI-Office
+.ackup.ps1 -MirrorDir "$env:OneDrive\Backups\AI-Office" # also copy it to a second folder (another disk, cloud)
+```
+
+The folders can also be set once in the root `.env` (`BACKUP_DIR`, `BACKUP_MIRROR_DIR`). The script runs `pg_dump`
+inside the database container, checks that `pg_restore` can read the file and only then saves it as
+`ai_office-<yyyyMMdd-HHmmss>.dump`. To run it every day, add it to Windows Task Scheduler.
+
+To restore a copy, stop the backend (`.\stop.ps1`, then `docker compose up -d db`) and load the file over the current
+data:
+
+```powershell
+docker cp "$env:USERPROFILE\Backups\AI-Officei_office-20261013-210000.dump" ai-office-db:/tmp/restore.dump
+docker exec ai-office-db pg_restore -U ai_office -d ai_office --clean --if-exists /tmp/restore.dump
+docker exec ai-office-db rm /tmp/restore.dump
+```
+
+(`-U` and `-d` are `POSTGRES_USER` and `POSTGRES_DB` from the root `.env`.) Then start everything again with
+`.\start.ps1`.
+
 ## Using it
 
 - Mouse: left drag rotates, right drag pans, the wheel zooms to the cursor; Home returns to the default view.
@@ -240,7 +267,8 @@ If PowerShell refuses to run scripts, run them as `powershell -ExecutionPolicy B
 - Agents stay in the office after their work: Send home in an agent's panel, Release all in Director's
   office → Team. Someone with a task in progress, queued or sent back for changes cannot go (the disabled
   button says why); tasks waiting for your review or paused do not keep anyone.
-- API docs: http://localhost:8000/docs, the whole API as Markdown for language models: http://localhost:8000/llms.txt.
+- The whole API as Markdown (also for language models): http://localhost:8000/llms.txt; OpenAPI: /openapi.json.
+  The interactive docs at /docs load Swagger UI from a CDN, so they are off unless `API_DOCS=true` in `backend/.env`.
   Health: http://localhost:8000/health.
 
 ## Tests and checks

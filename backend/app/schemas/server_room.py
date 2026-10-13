@@ -68,6 +68,9 @@ class JobSourceInfo(BaseModel):
     last_ok_at: datetime | None = None
     last_error: str | None = None
     last_error_at: datetime | None = None
+    used_today: int = 0
+    """API requests this app sent today (UTC)."""
+    daily_limit: int = 0
 
 
 class ServerRoom(BaseModel):

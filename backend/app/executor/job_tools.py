@@ -19,7 +19,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
-from app.executor.prompt import escape_tags
+from app.executor.prompt import escape_tags, md_text, md_url
 from app.executor.worker import ActivityStep
 from app.jobs import EXPIRED, OPEN, UNCHECKED, Exclusion, Job, JobSearch, absorb, check, closed_phrase, same_vacancy, summary
 from app.jobs.freshness import GONE, REFUSED, refused
@@ -81,6 +81,8 @@ class JobTools:
     advert_chars: int = 6000
     stage_timeout: float = 900.0
     """Active time of a research stage that has only job tools (with web tools, theirs applies)."""
+    max_query_chars: int = 200
+    """Longest query or location a search may send."""
 
 
 def _exclusions(items: list[Exclusion]) -> list[dict[str, str]]:
@@ -145,6 +147,10 @@ class JobSession:
         if not entry.exclusions:
             entry.exclusions = check(entry.job.checked_text)
         return entry, "withdrawn" if entry.hidden and not was_hidden else "seen"
+
+    def urls(self) -> set[str]:
+        """Every address the job sources gave for the vacancies seen (pages the agent may open)."""
+        return {u for e in self.entries.values() for u in (e.job.url, *e.job.links.values()) if u}
 
     @property
     def excluded(self) -> list[_Entry]:
@@ -371,23 +377,23 @@ async def get_job(tools: JobTools, steps: StepLog, session: JobSession, args: Ma
 
 
 def _job_line(row: Mapping[str, Any], with_ref: bool = True) -> str:
-    parts = [str(row.get("title") or "")]
-    parts += [str(row[k]) for k in ("company", "location") if row.get(k)]
+    parts = [md_text(row.get("title") or "")]
+    parts += [md_text(row[k]) for k in ("company", "location") if row.get(k)]
     if row.get("salary"):
-        parts.append(str(row["salary"]))
+        parts.append(md_text(row["salary"]))
     if row.get("posted"):
-        parts.append(f"posted {row['posted']}")
+        parts.append(f"posted {md_text(row['posted'])}")
     ref = f"[{row['ref']}] " if with_ref and row.get("ref") else ""
-    return f"- {ref}{' — '.join(p for p in parts if p)} — {row.get('url')}"
+    return f"- {ref}{' — '.join(p for p in parts if p)} — {md_url(row.get('url') or '')}"
 
 
 def _excluded_line(row: Mapping[str, Any]) -> str:
-    reasons = "; ".join(f'{e["reason"]} ("{e["phrase"]}")' for e in row.get("exclusions", []))
+    reasons = "; ".join(f'{e["reason"]} ("{md_text(e["phrase"])}")' for e in row.get("exclusions", []))
     return f"{_job_line(row, with_ref=False)}\n  - Reason: {reasons}"
 
 
 def _closed_line(row: Mapping[str, Any]) -> str:
-    return f"{_job_line(row, with_ref=False)}\n  - Closed: {row.get('freshness_note')}"
+    return f"{_job_line(row, with_ref=False)}\n  - Closed: {md_text(row.get('freshness_note') or '')}"
 
 
 def closed_task_pages(report: Mapping[str, Any]) -> list[Mapping[str, str]]:
@@ -396,13 +402,13 @@ def closed_task_pages(report: Mapping[str, Any]) -> list[Mapping[str, str]]:
 
 def verdict_block(report: Mapping[str, Any]) -> str:
     if flags := report.get("task_flags") or []:
-        reasons = "; ".join(f'{f["reason"]} ("{f["phrase"]}")' for f in flags)
+        reasons = "; ".join(f'{f["reason"]} ("{md_text(f["phrase"])}")' for f in flags)
         return (
             "> **Not eligible — no application prepared.** The vacancy requires: "
             f"{reasons}. This is a hard filter in code: the director cannot meet this requirement."
         )
     if closed := closed_task_pages(report):
-        reasons = "; ".join(f"{p['note']} ({p['url']})" for p in closed)
+        reasons = "; ".join(f"{md_text(p['note'])} ({md_url(p['url'])})" for p in closed)
         return f"> **Closed — no application prepared.** The vacancy in the task is no longer open: {reasons}."
     return ""
 
@@ -416,14 +422,14 @@ def freshness_note(text: str, report: Mapping[str, Any]) -> str:
     or for all of them when the text links none, and for a vacancy given in the task."""
     if verdict_block(report):
         return ""
-    lines = [f"- The vacancy in the task ({p['url']}): {p['note']}" for p in report.get("task_pages") or [] if p.get("freshness") == UNCHECKED]
+    lines = [f"- The vacancy in the task ({md_url(p['url'])}): {md_text(p['note'])}" for p in report.get("task_pages") or [] if p.get("freshness") == UNCHECKED]
     jobs = list(report.get("jobs") or [])
     unchecked = [r for r in jobs if r.get("freshness", UNCHECKED) == UNCHECKED]
     mentioned = [r for r in unchecked if _mentions(text, r)]
     if mentioned or any(_mentions(text, r) for r in jobs):
-        lines += [f"- {r.get('title')} — {r.get('company') or 'company not stated'}: {r.get('freshness_note') or 'not checked'}" for r in mentioned]
+        lines += [f"- {md_text(r.get('title'))} — {md_text(r.get('company') or 'company not stated')}: {md_text(r.get('freshness_note') or 'not checked')}" for r in mentioned]
     elif unchecked:
-        reasons = "; ".join(dict.fromkeys(str(r.get("freshness_note") or "not checked") for r in unchecked))
+        reasons = "; ".join(dict.fromkeys(md_text(r.get("freshness_note") or "not checked") for r in unchecked))
         lines.append(f"- {len(unchecked)} of {len(jobs)} vacancies found: {reasons}")
     if not lines and not report.get("searches") and not report.get("task_pages"):
         lines.append("- The vacancy was given as text, so whether it is still open was not checked")

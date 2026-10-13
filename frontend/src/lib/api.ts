@@ -160,7 +160,7 @@ export type WebStep = {
   /** search / fetch: the web; jobs: a job search (target = "query · place"); job: reading a job advert. */
   kind: "search" | "fetch" | "jobs" | "job";
   target: string;
-  status: "running" | "done" | "failed";
+  status: "running" | "done" | "failed" | "blocked";
   /** In English; `detail_code` + `detail_params` give it in the interface language (`stepDetail` in the dictionaries). */
   detail?: string;
   detail_code?: string;
@@ -273,7 +273,17 @@ export type ServerRoom = {
   searxng_up: boolean;
   searxng_url: string;
   /** Job APIs: keys set or not (values never sent) and how the latest request went. */
-  job_sources: { name: string; label: string; configured: boolean; last_ok_at: string | null; last_error: string | null; last_error_at: string | null }[];
+  job_sources: {
+    name: string;
+    label: string;
+    configured: boolean;
+    last_ok_at: string | null;
+    last_error: string | null;
+    last_error_at: string | null;
+    /** API requests sent today (UTC) and the daily limit from backend/.env. */
+    used_today: number;
+    daily_limit: number;
+  }[];
   last_speed: { tokens_per_second: number; model: string | null; agent_title: string; finished_at: string | null } | null;
   queue: ModelUser[];
   running: ModelUser[];

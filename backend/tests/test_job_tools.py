@@ -341,15 +341,17 @@ async def test_a_guide_page_about_clearance_is_not_an_excluded_vacancy() -> None
         return ["93.184.215.14"]
 
     web = WebTools(
-        search=SearxClient("http://searx.test", transport=searx([])),
+        search=SearxClient("http://searx.test", transport=searx([{"title": "Vetting levels", "url": "https://gov.example/vetting"}])),
         fetcher=PageFetcher(FetchLimits(page_chars=2000), resolve, sites({"gov.example/vetting": guide})),
     )
     tools, _, _ = job_tools()
-    ollama = FakeOllama([tool_turn("fetch_page", {"url": "https://gov.example/vetting"}), chunks("- BPSS is not SC [1]")])
+    ollama = FakeOllama(
+        [tool_turn("web_search", {"query": "UK vetting levels"}), tool_turn("fetch_page", {"url": "https://gov.example/vetting"}), chunks("- BPSS is not SC [1]")]
+    )
 
     out = await worker(ollama, tools, web).run(jobs_input(web=True, description="Please review this vacancy: Graduate developer, Leeds. BPSS checks apply."), RecordingReport())
 
-    assert "ELIGIBILITY FILTER" in tool_messages(ollama.requests[1])[0]
+    assert "ELIGIBILITY FILTER" in tool_messages(ollama.requests[2])[1]
     assert out.jobs is not None and out.jobs["excluded"] == [] and out.jobs["task_flags"] == []
     final = finalize("Verdict: apply [1]\n\n## Sources\n[1] Vetting levels — https://gov.example/vetting", out.jobs)
     assert "https://gov.example/vetting" in final and NOT_ELIGIBLE_HEADING not in final

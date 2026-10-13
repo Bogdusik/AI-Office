@@ -76,7 +76,7 @@ async def client(
             yield session
 
     app.dependency_overrides[get_db] = override_get_db
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://localhost") as c:
         yield c
     app.dependency_overrides.clear()
 

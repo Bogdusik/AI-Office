@@ -69,6 +69,10 @@ class _Cancelled:
     pass
 
 
+class _Paused:
+    """The task was paused before the model request went out: the stage stops at once and runs again on resume."""
+
+
 class _RunReport:
     """The executor's side of `StageReport`: run status changes and throttled partial text, all in the DB."""
 
@@ -78,14 +82,30 @@ class _RunReport:
         self._text: str | None = None
         self._saved: str | None = None
         self._saved_at = 0.0
+        self.sent = True
+        """The stage is at work (not queued for the model, not waiting for Ollama): a pause waits for the stage end.
+        Only a worker that reports waiting clears it, so a stage counts as working until it says otherwise."""
 
     async def waiting(self) -> None:
+        self.sent = False
         await self._ex._set_run_status(self, RunStatus.WAITING)
         await self._ex._set_activity(self.agent_id, ActivityKind.WAITING_MODEL)
 
     async def started(self) -> None:
+        self.sent = True
         await self._ex._set_run_status(self, RunStatus.RUNNING)
         await self._ex._set_activity(self.agent_id, ActivityKind.WORKING)
+
+    async def unavailable(self, url: str) -> None:
+        self.sent = False
+        await self._ex._set_run_status(
+            self,
+            RunStatus.WAITING,
+            error=f"Ollama is not answering at {url}; waiting for it and going on by itself.",
+            error_code="model_unavailable",
+            error_params={"url": url},
+        )
+        await self._ex._set_activity(self.agent_id, ActivityKind.WAITING_MODEL)
 
     def partial(self, text: str) -> None:
         self._text = text
@@ -111,6 +131,7 @@ class _RunReport:
 
 
 CANCELLED = _Cancelled()
+PAUSED = _Paused()
 
 def now() -> datetime:
     return datetime.now(UTC)
@@ -494,8 +515,9 @@ class Executor:
             publish_task(task)
         return run_id, data
 
-    async def _execute(self, report: _RunReport, data: StageInput) -> StageOutput | BaseException | _Cancelled:
-        """Runs the stage; a cancelled task stops it right away (pause waits for the boundary).
+    async def _execute(self, report: _RunReport, data: StageInput) -> StageOutput | BaseException | _Cancelled | _Paused:
+        """Runs the stage; a cancelled task stops it right away; a pause waits for the boundary unless the model
+        request has not gone out yet (queued, or Ollama out of reach), then it stops right away too.
         While it runs, partial text is saved every `Timings.progress` seconds."""
         work = asyncio.create_task(self._worker.run(data, report))
         poke = self._poke(report.agent_id)
@@ -509,10 +531,11 @@ class Executor:
                 if work in done:
                     break
                 await report.flush()
-                if await self._task_status(report.task_id) == TaskStatus.CANCELLED:
+                status = await self._task_status(report.task_id)
+                if status == TaskStatus.CANCELLED or (status == TaskStatus.PAUSED and not report.sent):
                     work.cancel()
                     await asyncio.gather(work, return_exceptions=True)
-                    return CANCELLED
+                    return CANCELLED if status == TaskStatus.CANCELLED else PAUSED
         finally:
             if not work.done():
                 work.cancel()
@@ -520,8 +543,9 @@ class Executor:
             return CANCELLED
         return work.exception() or work.result()
 
-    async def _set_run_status(self, report: _RunReport, status: RunStatus) -> None:
-        values: dict[str, object] = {"status": status}
+    async def _set_run_status(self, report: _RunReport, status: RunStatus, **reason: object) -> None:
+        """`reason`: why a run waits (error, error_code, error_params); cleared on any other change."""
+        values: dict[str, object] = {"status": status, "error": None, "error_code": None, "error_params": None, **reason}
         if status == RunStatus.RUNNING:
             values["started_at"] = now()
         async with self._sessions() as s:
@@ -537,7 +561,7 @@ class Executor:
         async with self._sessions() as s:
             return await s.scalar(select(Task.status).where(Task.id == task_id))
 
-    async def _record(self, task_id: int, run_id: int, outcome: StageOutput | BaseException | _Cancelled) -> None:
+    async def _record(self, task_id: int, run_id: int, outcome: StageOutput | BaseException | _Cancelled | _Paused) -> None:
         failed_task: Task | None = None
         async with self._sessions() as s:
             run = await s.get_one(Run, run_id, with_for_update=True)
@@ -553,6 +577,9 @@ class Executor:
                 run.jobs = dict(outcome.jobs) if outcome.jobs is not None else None
             elif isinstance(outcome, _Cancelled):
                 run.status = RunStatus.CANCELLED
+            elif isinstance(outcome, _Paused):
+                run.status = RunStatus.INTERRUPTED
+                run.error, run.error_code, run.error_params = "Paused before the model started", "paused_waiting", {}
             else:
                 run.status = RunStatus.FAILED
                 run.error = str(outcome) if isinstance(outcome, StageError) else f"{type(outcome).__name__}: {outcome}"

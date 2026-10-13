@@ -120,7 +120,9 @@ export function ServerPanel() {
                     : s.last_ok_at
                       ? t("server.keysLastRequest", { date: formatDate(s.last_ok_at) })
                       : t("server.keysNoRequests");
-                return <Dot key={s.name} ok={s.configured && !failedLast} label={s.label} detail={detail} />;
+                const quota = s.configured ? ` · ${t("server.usedToday", { used: s.used_today, limit: s.daily_limit })}` : "";
+                const spent = s.configured && s.used_today >= s.daily_limit;
+                return <Dot key={s.name} ok={s.configured && !failedLast && !spent} label={s.label} detail={detail + quota} />;
               })}
             </div>
           </Section>
