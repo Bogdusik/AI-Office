@@ -67,6 +67,8 @@ def test_reading_from_another_site_stays_possible_only_through_cors() -> None:
 def test_postgres_and_the_dev_server_listen_on_loopback_only() -> None:
     compose = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
     ports = [line.strip() for line in compose.splitlines() if line.strip().startswith('- "') and ":" in line and "${" in line]
-    assert ports and all(p.startswith('- "127.0.0.1:') for p in ports), ports
+    assert ports and all(p.startswith(('- "127.0.0.1:', '- "[::1]:')) for p in ports), ports
+    # localhost resolves to ::1 first on Windows; without the IPv6 loopback every connection waits ~2 s for a refusal
+    assert '- "[::1]:${POSTGRES_PORT:-5433}:5432"' in compose
     start = (ROOT / "start.ps1").read_text(encoding="utf-8")
     assert "'run', 'dev', '--', '-p', $FrontendPort, '-H', '127.0.0.1'" in start
