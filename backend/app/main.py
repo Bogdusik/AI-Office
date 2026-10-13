@@ -121,7 +121,12 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         await engine.dispose()
 
 
-app = FastAPI(title="AI Office API", version="0.2.0", lifespan=lifespan)
+def docs_urls(api_docs: bool) -> dict[str, str | None]:
+    """The interactive docs pull their scripts from a CDN into the API's origin, so they are off unless asked for."""
+    return {"docs_url": "/docs", "redoc_url": "/redoc"} if api_docs else {"docs_url": None, "redoc_url": None}
+
+
+app = FastAPI(title="AI Office API", version="0.2.0", lifespan=lifespan, **docs_urls(get_settings().api_docs))
 
 app.add_middleware(OriginGuard, allowed_origins=get_settings().cors_origins)
 app.add_middleware(
