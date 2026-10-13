@@ -34,3 +34,6 @@ run.txt
 
 # Article media (local only)
 docs/article/
+
+# copies of CLAUDE.md made by other tools
+AGENTS.md
