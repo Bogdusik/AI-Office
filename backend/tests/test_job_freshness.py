@@ -254,7 +254,7 @@ async def test_a_vacancy_link_the_site_refuses_is_reported_as_unchecked() -> Non
 
     assert tool_messages(ollama.requests[1])[0] == "ERROR: could not open https://jobs.example/123: HTTP 403. Try another result."
     final = finalize("Dear hiring manager…", research.jobs)
-    assert final.endswith(f"{UNCHECKED_HEADING}\n> - The vacancy in the task (https://jobs.example/123): the site does not let automated requests in (HTTP 403); not worked around")
+    assert final.endswith(f"{UNCHECKED_HEADING}\n> - The vacancy in the task (<https://jobs.example/123>): the site does not let automated requests in (HTTP 403); not worked around")
 
 
 async def test_a_closed_notice_on_the_task_page_closes_the_vacancy() -> None:

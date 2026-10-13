@@ -239,7 +239,7 @@ async def test_research_sources_and_steps_are_saved(
     research = next(r for r in runs if r.stage == TaskStage.RESEARCH)
     assert research.sources == ["https://docs.example/guide"]
     assert [(s["kind"], s["status"]) for s in research.activity] == [("search", "done"), ("fetch", "done")]
-    assert research.output.endswith("## Sources\n[1] FastAPI and PostgreSQL — https://docs.example/guide")
+    assert research.output.endswith("## Sources\n[1] FastAPI and PostgreSQL — <https://docs.example/guide>")
     assert research.tokens_per_second == 20.0
     [artifact] = await world.artifacts(task["id"])
     assert artifact.sources == ["https://docs.example/guide"]

@@ -76,7 +76,7 @@ async def test_search_read_and_write_notes_with_numbered_sources() -> None:
     out = await research(ollama, web_tools()).run(stage_input(TaskStage.RESEARCH), report)
 
     assert out.text.startswith("- FastAPI pairs with SQLAlchemy and asyncpg [1]")
-    assert out.text.endswith("## Sources\n[1] FastAPI and PostgreSQL — https://docs.example/guide")
+    assert out.text.endswith("## Sources\n[1] FastAPI and PostgreSQL — <https://docs.example/guide>")
     assert out.sources == ("https://docs.example/guide",)
     assert (out.input_tokens, out.output_tokens) == (50 + 50 + 900, 10 + 10 + 60)
 

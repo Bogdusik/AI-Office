@@ -5,6 +5,7 @@ Everything is a pure function of `StageInput`, so it is easy to test. When the i
 context budget, sections are shortened in a fixed order and each cut is marked in the text.
 """
 
+import re
 from dataclasses import dataclass, replace
 from datetime import date
 
@@ -285,11 +286,25 @@ def build_messages(
     return [{"role": "system", "content": _render(system)}, {"role": "user", "content": _render(user)}]
 
 
+_DATA_TAG = re.compile(r"<\s*(/?)\s*(web_content|web_search_results|job_results|job_advert)", re.IGNORECASE)
+_MD_SPECIAL = re.compile(r"([\\`*_\[\]<>!])")
+
+
 def escape_tags(text: str) -> str:
-    """Page text cannot close or open our data tags (a page could try to break out of them)."""
-    for tag in ("web_content", "web_search_results", "job_results", "job_advert"):
-        text = text.replace(f"</{tag}", f"&lt;/{tag}").replace(f"<{tag}", f"&lt;{tag}")
-    return text
+    """Page text cannot close or open our data tags in any spelling (`</WEB_CONTENT>`, `< /web_content>`)."""
+    return _DATA_TAG.sub(lambda m: f"&lt;{m.group(1)}{m.group(2)}", text)
+
+
+def md_text(value: object, limit: int = 300) -> str:
+    """Untrusted text (a page title, a job field, a phrase from an advert) as plain Markdown text: one line, and
+    no characters that would turn it into an image, a link, HTML or emphasis."""
+    return _MD_SPECIAL.sub(r"\\\1", " ".join(str(value).split())[:limit])
+
+
+def md_url(url: object) -> str:
+    """An address as a Markdown autolink that nothing inside it can break out of."""
+    clean = "%20".join(str(url).split()).replace("<", "%3C").replace(">", "%3E")
+    return f"<{clean}>" if clean else ""
 
 
 def _attr(value: str) -> str:
