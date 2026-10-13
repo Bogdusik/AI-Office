@@ -8,10 +8,12 @@ A broken search service or page never fails the stage: the model is told, and th
 
 import asyncio
 import json
+import re
 import time
 from dataclasses import dataclass, field
 from datetime import date
 from typing import TYPE_CHECKING, Any
+from urllib.parse import urlsplit, urlunsplit
 
 from app.executor.job_tools import JOB_TOOLS, JobSession, JobTools, get_job, notes_appendix, search_jobs
 from app.executor.prompt import (
@@ -22,6 +24,7 @@ from app.executor.prompt import (
     shrink_tool_messages,
     web_page_block,
 )
+from app.executor.privacy import PrivateTerm, leaked, private_terms
 from app.executor.worker import ActivityStep, StageError, StageInput, StageOutput, StageReport
 from app.web import FetchError, PageFetcher, SearchUnavailable, SearxClient
 
@@ -72,6 +75,8 @@ class WebTools:
     tool_timeout: float = 15.0
     stage_timeout: float = 900.0
     """Active time of the whole research stage (model calls and tools, not waiting for the GPU)."""
+    max_url_chars: int = 500
+    max_query_chars: int = 200
 
 
 @dataclass
@@ -79,6 +84,11 @@ class _Session:
     steps: list[ActivityStep] = field(default_factory=list)
     jobs: JobSession | None = None
     sources: list[tuple[str, str]] = field(default_factory=list)
+    allowed: set[str] = field(default_factory=set)
+    """Pages the agent may open (normalised): addresses from the task and from search results; job addresses come
+    from `jobs`. Anything else the model asks for was made up, possibly by a page telling it where to send data."""
+    private: list[PrivateTerm] = field(default_factory=list)
+    """Personal details a search query must not carry (`privacy.private_terms`)."""
     calls: int = 0
     searches_ok: int = 0
     searches_failed: int = 0
@@ -109,6 +119,27 @@ class _ClockedReport:
         await self._report.activity(steps)
 
 
+_TASK_URL = re.compile(r"https?://[^\s<>\"')\]]+")
+STEP_TARGET_CHARS = 2000
+"""A refused query or address is stored in full up to this length, so the director sees what was attempted."""
+
+
+def _norm(url: str) -> str:
+    """Comparable form of an address: no scheme, fragment or default port, lower-case host, no trailing slash."""
+    try:
+        p = urlsplit(url.strip())
+        port = p.port
+    except ValueError:
+        return url.strip()
+    host = (p.hostname or "").lower().rstrip(".")
+    netloc = host if port in (None, 80, 443) else f"{host}:{port}"
+    return urlunsplit(("", netloc, p.path.rstrip("/") or "/", p.query, ""))
+
+
+def _task_urls(text: str) -> set[str]:
+    return {_norm(u.rstrip(".,;:")) for u in _TASK_URL.findall(text)}
+
+
 def _arguments(call: dict[str, Any]) -> tuple[str, dict[str, Any]]:
     fn = call.get("function") or {}
     args = fn.get("arguments") or {}
@@ -131,7 +162,43 @@ async def _finish_step(report: StageReport, session: _Session, step: ActivitySte
     await report.activity([dict(s) for s in session.steps])
 
 
+async def _blocked(report: StageReport, session: _Session, kind: str, target: str, detail: str, code: str, **params: Any) -> None:
+    """A tool call refused before anything left the machine; shown in the steps like any other."""
+    await _step(
+        report,
+        session,
+        {
+            "id": len(session.steps) + 1,
+            "kind": kind,
+            "target": target[:STEP_TARGET_CHARS],
+            "status": "blocked",
+            "detail": detail,
+            "detail_code": code,
+            "detail_params": params,
+        },
+    )
+
+
+async def _refused_query(report: StageReport, session: _Session, kind: str, query: str, limit: int) -> str | None:
+    """Checks a search query before it goes out: its length and personal details from the profile."""
+    if len(query) > limit:
+        await _blocked(report, session, kind, query, f"query longer than {limit} characters", "query_too_long", max=limit)
+        return f"ERROR: the query is longer than {limit} characters and was not sent. Use a short search query."
+    hits = leaked(query, session.private)
+    if hits:
+        kinds = ", ".join(dict.fromkeys(h.kind for h in hits))
+        await _blocked(report, session, kind, query, f"personal details in the query ({kinds})", "private_terms", kinds=kinds)
+        return (
+            f"ERROR: the query was not sent because it contains personal details of the director ({kinds}). "
+            "Search engines must not receive them: search for the topic without them."
+        )
+    return None
+
+
 async def _web_search(tools: WebTools, report: StageReport, session: _Session, query: str) -> str:
+    refused = await _refused_query(report, session, "search", query, tools.max_query_chars)
+    if refused:
+        return refused
     step = await _step(report, session, {"id": len(session.steps) + 1, "kind": "search", "target": query, "status": "running"})
     try:
         async with asyncio.timeout(tools.tool_timeout):
@@ -141,6 +208,7 @@ async def _web_search(tools: WebTools, report: StageReport, session: _Session, q
         await _finish_step(report, session, step, "failed", "search unavailable", detail_code="search_down")
         return "ERROR: web search is unavailable right now. Continue without it and say so in your notes."
     session.searches_ok += 1
+    session.allowed.update(_norm(r.url) for r in results)
     await _finish_step(
         report, session, step, "done", f"{len(results)} results", detail_code="results", detail_params={"count": len(results)}
     )
@@ -153,6 +221,16 @@ async def _fetch_page(tools: WebTools, report: StageReport, session: _Session, u
     known = next((i for i, (u, _) in enumerate(session.sources, 1) if u == url), None)
     if known is not None:
         return f"Page {url} is already open as source [{known}]."
+    if len(url) > tools.max_url_chars:
+        await _blocked(report, session, "fetch", url, f"address longer than {tools.max_url_chars} characters", "url_too_long", max=tools.max_url_chars)
+        return f"ERROR: the address is longer than {tools.max_url_chars} characters and was not opened."
+    allowed = session.allowed | ({_norm(u) for u in session.jobs.urls()} if session.jobs else set())
+    if _norm(url) not in allowed:
+        await _blocked(report, session, "fetch", url, "not from search results, the task or the job tools", "url_not_allowed")
+        return (
+            f"ERROR: {url} was not opened: only addresses from search results, from the task or from the job tools "
+            "can be opened. Search for the page first."
+        )
     step = await _step(report, session, {"id": len(session.steps) + 1, "kind": "fetch", "target": url, "status": "running"})
     try:
         async with asyncio.timeout(tools.tool_timeout):
@@ -204,7 +282,8 @@ async def run_research(
     model = worker.model_for(data.agent)
     limits = WebLimits(calls=tools.max_calls, pages=tools.max_pages) if tools else None
     reserve = worker.reserve_for(data)
-    session = _Session()
+    task_text = f"{data.task.title}\n{data.task.description}"
+    session = _Session(allowed=_task_urls(task_text), private=private_terms(data.profile, task_text))
     if jobs is not None:
         session.jobs = JobSession.start(data.task.title, data.task.description, max(0, jobs.max_calls - data.job_calls_used))
     messages: list[dict[str, Any]] = list(
@@ -264,6 +343,16 @@ async def run_research(
             if job_tool and jobs is not None and session.jobs is not None:
                 if session.jobs.calls_left <= 0:
                     result = f"ERROR: the job tool limit for this task is used up ({jobs.max_calls} calls). Write the notes from what you have."
+                elif name == "search_jobs" and str(args.get("query") or "").strip() and (
+                    refused := await _refused_query(
+                        report,
+                        session,
+                        "jobs",
+                        " · ".join(" ".join(str(args.get(k) or "").split()) for k in ("query", "location") if args.get(k)),
+                        jobs.max_query_chars,
+                    )
+                ):
+                    result = refused
                 elif name == "search_jobs" and str(args.get("query") or "").strip():
                     session.jobs.calls_left -= 1
                     session.jobs.calls += 1

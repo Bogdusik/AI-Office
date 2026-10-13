@@ -105,26 +105,33 @@ export function WebSteps({ steps }: { steps: WebStep[] }) {
     <ul className="flex flex-col gap-1" data-testid="web-steps">
       {steps.map((s) => {
         const failed = s.status === "failed";
+        const blocked = s.status === "blocked";
         const running = s.status === "running";
-        const verb = s.kind === "search" ? (running ? t("steps.searching") : t("steps.searched")) : running ? t("steps.reading") : t("steps.read");
+        const verb = blocked
+          ? s.kind === "search" ? t("steps.searchBlocked") : t("steps.openBlocked")
+          : failed ? (s.kind === "search" ? t("steps.searchFailed") : t("steps.openFailed"))
+          : s.kind === "search" ? (running ? t("steps.searching") : t("steps.searched")) : running ? t("steps.reading") : t("steps.read");
         const detail = stepDetail(t, s);
-        const row = `flex items-start gap-2 rounded-md px-2 py-1 text-xs ${failed ? "bg-signal-down/8 text-ink/70" : running ? "bg-[#2a9fd6]/10" : "bg-white/70"}`;
+        const row = `flex items-start gap-2 rounded-md px-2 py-1 text-xs ${
+          blocked ? "bg-accent/10 text-ink/75" : failed ? "bg-signal-down/8 text-ink/70" : running ? "bg-[#2a9fd6]/10" : "bg-white/70"
+        }`;
         if (s.kind === "jobs" || s.kind === "job") return <JobStep key={s.id} step={s} className={row} />;
         return (
           <li key={s.id} className={row} data-status={s.status} data-kind={s.kind}>
             <span aria-hidden>{s.kind === "search" ? "🔎" : "📄"}</span>
             <span className="min-w-0 flex-1">
-              <span className="font-medium text-ink">{failed ? (s.kind === "search" ? t("steps.searchFailed") : t("steps.openFailed")) : verb}: </span>
+              <span className="font-medium text-ink">{verb}: </span>
               {s.kind === "fetch" && s.status === "done" && s.url ? (
                 <a href={s.url} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline" title={s.url}>
-                  {detail || shortUrl(s.url)}
+                  {detail || s.url}
                 </a>
               ) : (
-                <span className="break-all text-ink/80">{s.kind === "fetch" ? shortUrl(s.target) : t("common.quoted", { text: s.target })}</span>
+                <span className="break-all text-ink/80">{s.kind === "fetch" ? s.target : t("common.quoted", { text: s.target })}</span>
               )}
               {s.source !== undefined && <span className="ml-1 font-mono text-ink/45">[{s.source}]</span>}
               {detail && s.kind === "search" && <span className="text-ink/50"> · {detail}</span>}
-              {failed && s.kind === "fetch" && detail && <span className="block text-ink/50">{detail}</span>}
+              {(failed || blocked) && s.kind === "fetch" && detail && <span className="block text-ink/50">{detail}</span>}
+              {s.kind === "fetch" && s.status === "done" && s.url && detail && <span className="block break-all font-mono text-[11px] text-ink/45">{s.url}</span>}
             </span>
             {running && <span className="ml-auto shrink-0 animate-pulse text-[#2a9fd6]">…</span>}
           </li>
@@ -142,7 +149,7 @@ function JobStep({ step: s, className }: { step: WebStep; className: string }) {
   const failed = s.status === "failed";
   const search = s.kind === "jobs";
   const verb = search
-    ? running ? t("steps.searchingJobs") : failed ? t("steps.jobSearchFailed") : t("steps.searchedJobs")
+    ? running ? t("steps.searchingJobs") : s.status === "blocked" ? t("steps.jobSearchBlocked") : failed ? t("steps.jobSearchFailed") : t("steps.searchedJobs")
     : running ? t("steps.readingJob") : failed ? t("steps.jobUnread") : t("steps.readJob");
   const block = failed || s.detail_code === "job_not_eligible" || s.detail_code === "job_closed";
   return (

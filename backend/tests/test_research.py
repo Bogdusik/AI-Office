@@ -126,7 +126,8 @@ async def test_blocked_or_broken_pages_are_skipped() -> None:
     )
     tools = web_tools(names={"intranet.example": ["10.0.0.5"]})
     report = RecordingReport()
-    out = await research(ollama, tools).run(stage_input(TaskStage.RESEARCH), report)
+    task = "Check http://intranet.example/secret and https://docs.example/missing."
+    out = await research(ollama, tools).run(stage_input(TaskStage.RESEARCH, description=task), report)
 
     assert out.text.endswith(NO_PAGES_NOTE)
     results = [m["content"] for m in ollama.requests[2]["messages"] if m["role"] == "tool"]
@@ -160,7 +161,8 @@ async def test_page_limit() -> None:
             chunks("- notes [1]"),
         ]
     )
-    out = await research(ollama, web_tools(pages=pages, max_pages=1)).run(stage_input(TaskStage.RESEARCH), RecordingReport())
+    task = "Compare https://docs.example/guide with https://docs.example/other."
+    out = await research(ollama, web_tools(pages=pages, max_pages=1)).run(stage_input(TaskStage.RESEARCH, description=task), RecordingReport())
     assert out.sources == ("https://docs.example/guide",)
     second_result = [m for m in ollama.requests[2]["messages"] if m["role"] == "tool"][1]["content"]
     assert second_result.startswith("ERROR: page limit reached (1 pages)")
@@ -168,7 +170,8 @@ async def test_page_limit() -> None:
 
 async def test_page_text_cannot_break_out_of_its_data_tags() -> None:
     ollama = FakeOllama([tool_turn("fetch_page", {"url": "https://evil.example/"}), chunks("- notes [1]")])
-    out = await research(ollama, web_tools(pages={"evil.example/": INJECTION})).run(stage_input(TaskStage.RESEARCH), RecordingReport())
+    task = "Summarise https://evil.example/"
+    out = await research(ollama, web_tools(pages={"evil.example/": INJECTION})).run(stage_input(TaskStage.RESEARCH, description=task), RecordingReport())
     [tool] = [m for m in ollama.requests[1]["messages"] if m["role"] == "tool"]
     assert tool["content"].count("</web_content>") == 1 and tool["content"].endswith("</web_content>")
     assert "&lt;/web_content>" in tool["content"]
@@ -205,7 +208,8 @@ async def test_cancel_during_a_page_read_stops_the_stage() -> None:
         fetcher=PageFetcher(FetchLimits(), resolve, httpx.MockTransport(slow_site)),
     )
     ollama = FakeOllama([tool_turn("fetch_page", {"url": "https://docs.example/guide"}), chunks("never")])
-    running = asyncio.create_task(research(ollama, tools).run(stage_input(TaskStage.RESEARCH), RecordingReport()))
+    task = "Read https://docs.example/guide"
+    running = asyncio.create_task(research(ollama, tools).run(stage_input(TaskStage.RESEARCH, description=task), RecordingReport()))
     await asyncio.wait_for(entered.wait(), 2)
     running.cancel()
     with pytest.raises(asyncio.CancelledError):

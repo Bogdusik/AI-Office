@@ -50,6 +50,9 @@ class Settings(BaseSettings):
     web_max_bytes: int = 2_000_000
     web_tool_timeout_seconds: float = 15.0
     web_search_results: int = 8
+    web_max_url_chars: int = 500
+    web_max_query_chars: int = 200
+    """Also the limit of a job search query and location."""
 
     adzuna_app_id: SecretStr | None = None
     adzuna_app_key: SecretStr | None = None

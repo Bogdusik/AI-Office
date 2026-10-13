@@ -160,7 +160,7 @@ export type WebStep = {
   /** search / fetch: the web; jobs: a job search (target = "query · place"); job: reading a job advert. */
   kind: "search" | "fetch" | "jobs" | "job";
   target: string;
-  status: "running" | "done" | "failed";
+  status: "running" | "done" | "failed" | "blocked";
   /** In English; `detail_code` + `detail_params` give it in the interface language (`stepDetail` in the dictionaries). */
   detail?: string;
   detail_code?: string;
