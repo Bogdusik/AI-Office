@@ -153,23 +153,6 @@ async def test_cancel_stops_generation(
     assert run.status == RunStatus.CANCELLED
 
 
-async def test_ollama_down_fails_the_task_with_a_readable_error(
-    world: World, run_with: Callable[[Any], Awaitable[Executor]], floor: dict[str, Any], make_agent: Factory, make_task: Factory
-) -> None:
-    agent = await make_agent(floor["id"])
-    task = await make_task(agent["id"])
-
-    def refuse(request: httpx.Request) -> Any:
-        raise httpx.ConnectError("refused", request=request)
-
-    await run_with(LlmWorker(llm_settings(), FakeOllama([refuse]).transport()))
-    await until(world.is_task(task["id"], TaskStatus.FAILED))
-    [run] = await world.runs(task["id"])
-    assert run.status == RunStatus.FAILED
-    assert run.error == "Ollama is not answering at http://ollama.test. Start Ollama and retry the task."
-    assert (run.error_code, run.error_params) == ("ollama_unavailable", {"url": "http://ollama.test"})
-
-
 async def test_waiting_runs_are_interrupted_on_restart(
     db: AsyncSession, world: World, run_with: Callable[[Any], Awaitable[Executor]], floor: dict[str, Any], make_agent: Factory, make_task: Factory
 ) -> None:

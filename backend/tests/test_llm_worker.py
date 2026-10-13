@@ -4,7 +4,7 @@ from typing import Any
 import httpx
 import pytest
 
-from app.executor.llm import LlmWorker, ModelMissing, OllamaUnavailable, StageTimeout, strip_service_lines
+from app.executor.llm import LlmWorker, ModelMissing, StageTimeout, strip_service_lines
 from app.executor.worker import StageError
 from app.models.enums import RunProvider, TaskStage
 from tests.llm_fixtures import FakeOllama, RecordingReport, chunks, llm_settings, stage_input
@@ -41,7 +41,7 @@ async def test_agent_model_overrides_the_default() -> None:
 
 async def test_queue_reports_waiting_and_timeout_starts_at_sending() -> None:
     ollama = FakeOllama([chunks("first answer", pieces=5), chunks("second answer", pieces=5)], delay=0.03)
-    worker = LlmWorker(llm_settings(stage_timeout=0.4, retries=0), ollama.transport())
+    worker = LlmWorker(llm_settings(idle_timeout=0.4, retries=0), ollama.transport())
     first, second = RecordingReport(), RecordingReport()
 
     loop = asyncio.get_running_loop()
@@ -68,8 +68,8 @@ async def test_concurrency_setting_allows_parallel_requests() -> None:
 
 async def test_timeout_retries_once_then_fails() -> None:
     ollama = FakeOllama([chunks("too slow")], delay=0.5)
-    worker = LlmWorker(llm_settings(stage_timeout=0.1, retries=1), ollama.transport())
-    with pytest.raises(StageTimeout, match=r"did not answer within 0\.1 s \(attempts: 2\)"):
+    worker = LlmWorker(llm_settings(idle_timeout=0.1, retries=1), ollama.transport())
+    with pytest.raises(StageTimeout, match=r"wrote nothing for 0\.1 s \(attempts: 2\)"):
         await worker.run(stage_input(), RecordingReport())
     assert len(ollama.requests) == 2
     assert ollama.closed == 2
@@ -96,14 +96,16 @@ async def test_missing_model_is_not_retried() -> None:
     assert len(ollama.requests) == 1
 
 
-async def test_ollama_down_gives_a_clear_message() -> None:
+async def test_ollama_down_is_waited_for_with_a_reason() -> None:
     def refuse(request: httpx.Request) -> Any:
         raise httpx.ConnectError("connection refused", request=request)
 
-    ollama = FakeOllama([refuse])
-    with pytest.raises(OllamaUnavailable, match=r"Ollama is not answering at http://ollama\.test\. Start Ollama"):
-        await LlmWorker(llm_settings(), ollama.transport()).run(stage_input(), RecordingReport())
-    assert len(ollama.requests) == 2
+    ollama = FakeOllama([refuse, chunks("back again")], down=3)
+    report = RecordingReport()
+    out = await LlmWorker(llm_settings(), ollama.transport()).run(stage_input(), report)
+    assert out.text == "back again"
+    assert report.events == ["started", "unavailable", "started"]
+    assert ollama.probes == 4 and len(ollama.requests) == 2
 
 
 async def test_empty_answer_is_an_error() -> None:

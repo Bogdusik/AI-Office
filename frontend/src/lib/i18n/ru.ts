@@ -98,7 +98,8 @@ export const ru: Shape<typeof en> = {
   stageError: {
     empty_answer: "Модель вернула пустой ответ.",
     empty_research_notes: "Модель вернула пустые заметки исследования.",
-    model_timeout: "Модель «{model}» не ответила за {seconds} с (попыток: {attempts}).",
+    model_timeout: "Модель «{model}» ничего не писала {seconds} с (попыток: {attempts}).",
+    paused_waiting: "Пауза до начала работы модели",
     ollama_unavailable: "Ollama не отвечает по адресу {url}. Запустите Ollama и повторите задачу.",
     context_full:
       "Ответ не поместился в окно контекста модели ({num_ctx} токенов): вход {input} токенов, ещё {output} ушло до текста ответа. Сократите описание или комментарии задачи или увеличьте OLLAMA_NUM_CTX в backend/.env.",
@@ -372,6 +373,7 @@ export const ru: Shape<typeof en> = {
     jobSearchBlocked: "Поиск вакансий заблокирован",
     liveStage: "Этап: {stage}",
     waitingQueue: "ждёт очереди к модели",
+    ollamaDown: "Ollama не отвечает по адресу {url}: ждём её, этап продолжится сам",
     searchingJobsNow: "ищет вакансии…",
     searchingWebNow: "ищет в сети…",
     writing: "пишет…",

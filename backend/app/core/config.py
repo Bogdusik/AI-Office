@@ -38,7 +38,8 @@ class Settings(BaseSettings):
     ollama_think: bool = True
     ollama_temperature: float = 0.3
     llm_concurrency: int = 1
-    llm_stage_timeout_seconds: float = 300.0
+    llm_idle_timeout_seconds: float = 120.0
+    """A model call counts as stuck after this long without a new chunk (thinking or text); there is no total limit."""
     llm_retries: int = 1
     llm_reserve_tokens: int = 6144
     """Least part of the context window kept for the answer; the real reserve also counts thinking and the answer size."""

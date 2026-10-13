@@ -94,7 +94,8 @@ export const en = {
   stageError: {
     empty_answer: "The model returned an empty answer.",
     empty_research_notes: "The model returned empty research notes.",
-    model_timeout: "Model “{model}” did not answer within {seconds} s (attempts: {attempts}).",
+    model_timeout: "Model “{model}” wrote nothing for {seconds} s (attempts: {attempts}).",
+    paused_waiting: "Paused before the model started",
     ollama_unavailable: "Ollama is not answering at {url}. Start Ollama and retry the task.",
     context_full:
       "The answer did not fit into the model's context window ({num_ctx} tokens): {input} tokens of input, another {output} went before the answer text. Shorten the task description or comments or raise OLLAMA_NUM_CTX in backend/.env.",
@@ -368,6 +369,7 @@ export const en = {
     jobSearchBlocked: "Job search refused",
     liveStage: "Stage: {stage}",
     waitingQueue: "waiting in the model queue",
+    ollamaDown: "Ollama is not answering at {url}: waiting for it, the stage goes on by itself",
     searchingJobsNow: "searching for jobs…",
     searchingWebNow: "searching the web…",
     writing: "writing…",
