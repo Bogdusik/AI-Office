@@ -28,9 +28,10 @@ The screenshots use the fictional demo profile (`python -m app.seed --demo`). Th
   per agent at a time. Results are versioned Markdown with sources; rework starts from your comments and the previous
   version. Pause, resume and cancel at any moment.
 - **Local LLM.** Ollama with streaming and thinking on. A context budget keeps room for thinking and the whole answer
-  and trims the input in a fixed order (if the window still fills up, the call is repeated without thinking); one retry
-  after a timeout or a dropped stream; plain-language errors for the director (Ollama not running, model not pulled,
-  timed out). A failed task can be retried from the stage that failed.
+  and trims the input in a fixed order (if the window still fills up, the call is repeated without thinking). If
+  Ollama stops or restarts, work waits for it and goes on from the text already written instead of failing; a call
+  counts as stuck only when the model writes nothing for two minutes. Plain-language errors for the director (model
+  not pulled, stuck). A failed task can be retried from the stage that failed.
 - **Web research.** Agents with web access search through a local SearXNG instance and read public pages through a
   guarded fetcher; every claim in the result points to a numbered source.
 - **Job search.** The job search agent queries the official Adzuna and Reed APIs, merges duplicates across them and
@@ -105,8 +106,8 @@ overlaps, lift capacity, exact durations, no jump when someone turns back at any
 appear) without a browser.
 
 **A queue in front of the GPU.** A semaphore (`LLM_CONCURRENCY`, default 1) guards the model. A run is `waiting` until
-its request is really sent, then `running`. The stage timeout counts from sending, not from joining the queue, and the
-GPU slot is held per model call, never while a web tool runs. The queue is visible: waiting agents lean back, then go
+its request is really sent, then `running`. A call times out only when its stream goes silent, never while it waits
+in the queue, and the GPU slot is held per model call, never while a web tool runs. The queue is visible: waiting agents lean back, then go
 for coffee, and the server room lists who has the model and who is next.
 
 **A hard filter in code for job eligibility.** Whether a vacancy is out of reach (security clearance with a UK
