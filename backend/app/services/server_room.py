@@ -17,6 +17,7 @@ from app.core.config import Settings
 from app.models import Agent, Run, Task
 from app.models.enums import RunProvider, RunStatus
 from app.jobs.sources import STATES
+from app.jobs.usage import used_today
 from app.schemas.server_room import (
     GpuInfo,
     JobSourceInfo,
@@ -83,18 +84,19 @@ class LiveProbes:
         return await SearxClient(self.settings.searxng_url).healthy()
 
 
-def job_sources(settings: Settings) -> list[JobSourceInfo]:
-    """Whether each job source has its keys, and how its latest request went (no request is made here)."""
+async def job_sources(session: AsyncSession, settings: Settings) -> list[JobSourceInfo]:
+    """Whether each job source has its keys, how its latest request went and how much of today's limit is used
+    (no request to the source is made here)."""
 
     def has(*values: object) -> bool:
         return all(v is not None and v.get_secret_value().strip() for v in values)  # type: ignore[attr-defined]
 
     rows = [
-        ("adzuna", "Adzuna", has(settings.adzuna_app_id, settings.adzuna_app_key)),
-        ("reed", "Reed", has(settings.reed_api_key)),
+        ("adzuna", "Adzuna", has(settings.adzuna_app_id, settings.adzuna_app_key), settings.adzuna_daily_limit),
+        ("reed", "Reed", has(settings.reed_api_key), settings.reed_daily_limit),
     ]
     infos = []
-    for name, label, configured in rows:
+    for name, label, configured, limit in rows:
         state = STATES.get(name)
         infos.append(
             JobSourceInfo(
@@ -104,6 +106,8 @@ def job_sources(settings: Settings) -> list[JobSourceInfo]:
                 last_ok_at=state.ok_at if state else None,
                 last_error=state.error if state else None,
                 last_error_at=state.error_at if state else None,
+                used_today=await used_today(session, name),
+                daily_limit=limit,
             )
         )
     return infos
@@ -171,7 +175,7 @@ async def build_server_room(session: AsyncSession, settings: Settings, probes: P
         gpu=gpu,
         searxng_up=searxng_up,
         searxng_url=settings.searxng_url,
-        job_sources=job_sources(settings),
+        job_sources=await job_sources(session, settings),
         last_speed=(
             LastSpeed(
                 tokens_per_second=last[0].tokens_per_second,

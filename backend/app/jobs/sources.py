@@ -91,6 +91,8 @@ def _without(url: str, secret: str) -> str:
 class AdzunaSource:
     name = "adzuna"
     label = "Adzuna"
+    details_use_api = False
+    """The full advert is the public web page, not an API request (it does not count against the daily limit)."""
     BASE = "https://api.adzuna.com/v1/api/jobs/gb"
     DETAILS = "https://www.adzuna.co.uk/jobs/details/{id}"
 
@@ -173,6 +175,7 @@ class AdzunaSource:
 class ReedSource:
     name = "reed"
     label = "Reed"
+    details_use_api = True
     BASE = "https://www.reed.co.uk/api/1.0"
 
     def __init__(self, api_key: SecretStr | None, timeout: float = 15.0, transport: httpx.AsyncBaseTransport | None = None) -> None:

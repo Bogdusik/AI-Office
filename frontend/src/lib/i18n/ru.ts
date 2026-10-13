@@ -410,6 +410,7 @@ export const ru: Shape<typeof en> = {
     noKeys: "нет ключей в backend/.env",
     keysLastRequest: "ключи заданы · последний запрос {date}",
     keysNoRequests: "ключи заданы · запросов ещё не было",
+    usedToday: "{used} / {limit} за сегодня",
     model: "Модель",
     loaded: "Загружена",
     context: "контекст {size}",
