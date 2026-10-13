@@ -49,7 +49,9 @@ def llm_settings(**overrides: Any) -> LlmSettings:
         "think": True,
         "temperature": 0.3,
         "concurrency": 1,
-        "stage_timeout": 5.0,
+        "idle_timeout": 5.0,
+        "unavailable_wait": 0.01,
+        "unavailable_wait_max": 0.02,
         "retries": 1,
         "reserve_tokens": 6144,
     }
@@ -68,18 +70,26 @@ def chunks(text: str, *, prompt_tokens: int = 120, output_tokens: int = 45, piec
 @dataclass
 class FakeOllama:
     """A scripted /api/chat. Each request takes the next reply; a reply is a status code, a chunk list,
-    or a callable building the response. `gate` holds every stream after its first chunk until set."""
+    or a callable building the response. `gate` holds every stream after its first chunk until set.
+    `/api/version` answers unless `down` probes are still to fail (Ollama coming back after a restart)."""
 
     replies: list[Any]
     requests: list[dict[str, Any]] = field(default_factory=list)
     closed: int = 0
     delay: float = 0.0
     gate: asyncio.Event | None = None
+    down: int = 0
+    probes: int = 0
 
     def transport(self) -> httpx.MockTransport:
         return httpx.MockTransport(self._handle)
 
     async def _handle(self, request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/version":
+            self.probes += 1
+            if self.probes <= self.down:
+                raise httpx.ConnectError("connection refused", request=request)
+            return httpx.Response(200, json={"version": "test"})
         self.requests.append(json.loads(request.content))
         reply = self.replies[min(len(self.requests), len(self.replies)) - 1]
         if isinstance(reply, int):
@@ -115,6 +125,9 @@ class RecordingReport:
 
     async def started(self) -> None:
         self.events.append("started")
+
+    async def unavailable(self, url: str) -> None:
+        self.events.append("unavailable")
 
     def partial(self, text: str) -> None:
         self.partials.append(text)

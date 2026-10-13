@@ -114,6 +114,9 @@ class _ClockedReport:
         self.sent_at = time.monotonic()
         await self._report.started()
 
+    async def unavailable(self, url: str) -> None:
+        await self._report.unavailable(url)
+
     def partial(self, text: str) -> None:
         self._report.partial(text)
 
@@ -321,7 +324,7 @@ async def run_research(
             messages.append({"role": "user", "content": LIMIT_REACHED})
         shrink_tool_messages(messages, budget)
         clocked = _ClockedReport(report)
-        turn = await worker.generate(model, messages, clocked, None if final else available, max(remaining(), 60.0))
+        turn = await worker.generate(model, messages, clocked, None if final else available)
         spent += time.monotonic() - (clocked.sent_at or time.monotonic())
         session.input_tokens += turn.input_tokens
         session.output_tokens += turn.output_tokens

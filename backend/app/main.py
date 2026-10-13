@@ -78,7 +78,7 @@ def build_worker() -> StageWorker:
             think=settings.ollama_think,
             temperature=settings.ollama_temperature,
             concurrency=settings.llm_concurrency,
-            stage_timeout=settings.llm_stage_timeout_seconds,
+            idle_timeout=settings.llm_idle_timeout_seconds,
             retries=settings.llm_retries,
             reserve_tokens=settings.llm_reserve_tokens,
             think_tokens=settings.llm_think_tokens,

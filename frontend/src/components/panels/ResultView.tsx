@@ -183,13 +183,16 @@ export function LiveRun({ run }: { run: Run }) {
   const step = run.activity.at(-1);
   const onWeb = step?.status === "running";
   const onJobs = onWeb && (step?.kind === "jobs" || step?.kind === "job");
-  const note = waiting ? t("steps.waitingQueue") : onJobs ? t("steps.searchingJobsNow") : onWeb ? t("steps.searchingWebNow") : run.output ? t("steps.writing") : t("steps.thinking");
+  const ollamaDown = waiting && run.error_code === "model_unavailable";
+  const note = ollamaDown
+    ? t("steps.ollamaDown", { url: String(run.error_params?.url ?? "") })
+    : waiting ? t("steps.waitingQueue") : onJobs ? t("steps.searchingJobsNow") : onWeb ? t("steps.searchingWebNow") : run.output ? t("steps.writing") : t("steps.thinking");
   return (
     <div className="flex flex-col gap-2 rounded-xl border border-accent/30 bg-accent/5 p-3" data-testid="live-run" data-status={run.status}>
       <div className="flex items-center gap-2 text-xs">
         <span className="relative flex h-2 w-2">
           {!waiting && <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent opacity-60" />}
-          <span className={`relative inline-flex h-2 w-2 rounded-full ${waiting ? "bg-[#6f9bc6]" : "bg-accent"}`} />
+          <span className={`relative inline-flex h-2 w-2 rounded-full ${ollamaDown ? "bg-signal-down" : waiting ? "bg-[#6f9bc6]" : "bg-accent"}`} />
         </span>
         <span className="font-medium text-ink">{t("steps.liveStage", { stage: stageName(t, run.stage) })}</span>
         <span className="text-ink/55">· {note}</span>
