@@ -20,6 +20,8 @@ from app.executor.prompt import (
     WebLimits,
     budget_chars,
     build_messages,
+    md_text,
+    md_url,
     search_results_block,
     shrink_tool_messages,
     web_page_block,
@@ -270,7 +272,7 @@ def _notes(session: _Session, text: str, web: bool) -> str:
     elif web and not session.sources and not used_jobs:
         parts.append(NO_PAGES_NOTE)
     if session.sources:
-        parts.append("## Sources\n" + "\n".join(f"[{i}] {title} — {url}" for i, (url, title) in enumerate(session.sources, 1)))
+        parts.append("## Sources\n" + "\n".join(f"[{i}] {md_text(title)} — {md_url(url)}" for i, (url, title) in enumerate(session.sources, 1)))
     return "\n\n".join(p for p in parts if p)
 
 
