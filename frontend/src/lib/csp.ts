@@ -7,7 +7,8 @@ export function contentSecurityPolicy(apiUrl: string, dev: boolean): string {
   const api = new URL(apiUrl).origin;
   const directives: [string, string][] = [
     ["default-src", "'self'"],
-    ["script-src", `'self' 'unsafe-inline'${dev ? " 'unsafe-eval'" : ""}`],
+    // blob: — the 3D labels (troika) build their web workers from blob URLs and load them with importScripts
+    ["script-src", `'self' 'unsafe-inline' blob:${dev ? " 'unsafe-eval'" : ""}`],
     ["style-src", "'self' 'unsafe-inline'"],
     ["img-src", "'self' data: blob:"],
     ["font-src", "'self' data:"],
