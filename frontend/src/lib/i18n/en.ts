@@ -222,6 +222,8 @@ export const en = {
     life: "Office life",
     lifeOn: "Agents go for coffee, rest and talk",
     lifeOff: "Agents sit at their desks",
+    fps: "FPS",
+    fpsChoice: "Scene frame rate: fewer frames leave more of the graphics card to the model",
     director: "Director's office",
     searchLabel: "Search agents and tasks",
     searchPlaceholder: "Search for an agent or a task",

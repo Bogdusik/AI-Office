@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { DEFAULT_FPS, type Fps, parseFps } from "@/lib/frameRate";
 import { type Selection, selectionKey } from "@/scene/layout";
 
 export type FloorSelection = "all" | number;
@@ -23,6 +24,9 @@ type UiStore = {
   /** Office life on top of the animation (coffee, lounge, strolls, talks); off: everyone at their desk. */
   life: boolean;
   setLife: (on: boolean) => void;
+  /** Scene frame rate (HUD switch, remembered in the browser). */
+  fps: Fps;
+  setFps: (fps: Fps) => void;
   /** Agent the camera follows (person or car), if any. */
   follow: number | null;
   setAnimation: (on: boolean) => void;
@@ -44,6 +48,16 @@ type UiStore = {
 
 const ANIMATION_KEY = "ai-office:animation";
 const LIFE_KEY = "ai-office:life";
+const FPS_KEY = "ai-office:fps";
+
+/** The director's last frame rate (read after hydration, like `storedAnimation`). */
+export function storedFps(): Fps {
+  try {
+    return parseFps(localStorage.getItem(FPS_KEY));
+  } catch {
+    return DEFAULT_FPS;
+  }
+}
 
 /** The director's last choice for office life (read after hydration, like `storedAnimation`). */
 export function storedLife(): boolean {
@@ -76,6 +90,13 @@ export const useUiStore = create<UiStore>((set, get) => ({
   collapsed: { metrics: false, list: false, ribbon: false },
   animation: true,
   life: true,
+  fps: DEFAULT_FPS,
+  setFps: (fps) => {
+    try {
+      localStorage.setItem(FPS_KEY, String(fps));
+    } catch {}
+    set({ fps });
+  },
   setLife: (life) => {
     try {
       localStorage.setItem(LIFE_KEY, life ? "1" : "0");

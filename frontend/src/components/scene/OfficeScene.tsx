@@ -11,6 +11,7 @@ import { useT } from "@/lib/i18n";
 import { Building, toFloorData } from "./Building";
 import { CameraRig } from "./CameraRig";
 import { DevProbe } from "./DevProbe";
+import { FrameDriver } from "./FrameDriver";
 import { Motion } from "./motion/Motion";
 
 const SUN_DIRECTION: [number, number, number] = [-0.45, 1, 0.65];
@@ -78,6 +79,7 @@ export function OfficeScene() {
   return (
     <Canvas
       flat
+      frameloop="demand"
       shadows="percentage"
       className="absolute inset-0"
       gl={{ antialias: true }}
@@ -87,6 +89,7 @@ export function OfficeScene() {
         if (e.type === "click") select(null);
       }}
     >
+      <FrameDriver />
       <color attach="background" args={[PALETTE.sky]} />
       {world && <World world={world} />}
     </Canvas>
