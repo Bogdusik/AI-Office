@@ -17,6 +17,7 @@ from app.executor import Executor, FakeWorker, LlmSettings, LlmWorker, StageWork
 from app.executor.job_tools import JobTools
 from app.executor.research import WebTools
 from app.jobs import AdzunaSource, JobSearch, ReedSource
+from app.jobs.usage import DailyBudget
 from app.web import FetchLimits, PageFetcher, SearxClient
 from app.services.errors import (
     ConflictError,
@@ -63,6 +64,8 @@ def build_worker() -> StageWorker:
                 ReedSource(settings.reed_api_key, settings.jobs_timeout_seconds),
             ],
             cache_seconds=settings.jobs_cache_seconds,
+            budget=DailyBudget(SessionLocal, {"adzuna": settings.adzuna_daily_limit, "reed": settings.reed_daily_limit}),
+            failure_seconds=settings.jobs_failure_cache_seconds,
         ),
         max_calls=settings.jobs_max_calls,
         tool_timeout=settings.jobs_timeout_seconds * 2,

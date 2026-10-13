@@ -65,6 +65,11 @@ class Settings(BaseSettings):
     jobs_max_calls: int = 10
     """search_jobs + get_job calls per task, across all its versions."""
     jobs_cache_seconds: float = 600.0
+    jobs_failure_cache_seconds: float = 120.0
+    """A failed job API request is not repeated for this long (the same search or advert gets the same error)."""
+    adzuna_daily_limit: int = 100
+    reed_daily_limit: int = 100
+    """Requests per UTC day this app may send to each job API (0: none); the keys may be shared with other projects."""
     jobs_timeout_seconds: float = 15.0
     jobs_max_results: int = 50
 

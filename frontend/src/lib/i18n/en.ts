@@ -406,6 +406,7 @@ export const en = {
     noKeys: "no keys in backend/.env",
     keysLastRequest: "keys set · last request {date}",
     keysNoRequests: "keys set · no requests yet",
+    usedToday: "{used} / {limit} today",
     model: "Model",
     loaded: "Loaded",
     context: "context {size}",
