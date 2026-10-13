@@ -11,6 +11,11 @@ class Settings(BaseSettings):
     database_url: str
     test_database_url: str | None = None
     cors_origins: list[str] = ["http://localhost:3000"]
+    """Also the only origins allowed to send state-changing requests (`core/origin.py`)."""
+    allowed_hosts: list[str] = ["localhost", "127.0.0.1"]
+    api_docs: bool = False
+    """/docs and /redoc (Swagger UI and ReDoc load their scripts from a CDN into the API's own origin)."""
+    """Host header values the API answers; anything else (a DNS-rebinding page) gets 400."""
 
     executor_enabled: bool = True
     executor_arrive_seconds: float = 75.0
@@ -35,7 +40,8 @@ class Settings(BaseSettings):
     ollama_think: bool = True
     ollama_temperature: float = 0.3
     llm_concurrency: int = 1
-    llm_stage_timeout_seconds: float = 300.0
+    llm_idle_timeout_seconds: float = 120.0
+    """A model call counts as stuck after this long without a new chunk (thinking or text); there is no total limit."""
     llm_retries: int = 1
     llm_reserve_tokens: int = 6144
     """Least part of the context window kept for the answer; the real reserve also counts thinking and the answer size."""
@@ -50,6 +56,9 @@ class Settings(BaseSettings):
     web_max_bytes: int = 2_000_000
     web_tool_timeout_seconds: float = 15.0
     web_search_results: int = 8
+    web_max_url_chars: int = 500
+    web_max_query_chars: int = 200
+    """Also the limit of a job search query and location."""
 
     adzuna_app_id: SecretStr | None = None
     adzuna_app_key: SecretStr | None = None
@@ -58,6 +67,11 @@ class Settings(BaseSettings):
     jobs_max_calls: int = 10
     """search_jobs + get_job calls per task, across all its versions."""
     jobs_cache_seconds: float = 600.0
+    jobs_failure_cache_seconds: float = 120.0
+    """A failed job API request is not repeated for this long (the same search or advert gets the same error)."""
+    adzuna_daily_limit: int = 100
+    reed_daily_limit: int = 100
+    """Requests per UTC day this app may send to each job API (0: none); the keys may be shared with other projects."""
     jobs_timeout_seconds: float = 15.0
     jobs_max_results: int = 50
 

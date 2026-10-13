@@ -115,8 +115,15 @@ export function runError(t: T, run: Pick<Run, "error" | "error_code" | "error_pa
 }
 
 /** A web or job step's detail in the interface language. */
+function tryKey(t: T, key: string, fallback: string): string {
+  const shown = t(key as Key);
+  return shown === key ? fallback : shown;
+}
+
 export function stepDetail(t: T, step: WebStep): string | undefined {
-  const detail = step.detail_code === "job_closed" ? t("stepDetail.job_closed", { note: freshnessNote(t, String(step.detail_params?.note ?? "")) })
+  const detail = step.detail_code === "private_terms"
+    ? t("stepDetail.private_terms", { kinds: String(step.detail_params?.kinds ?? "").split(", ").map((k) => tryKey(t, `privacyKind.${k}`, k)).join(", ") })
+    : step.detail_code === "job_closed" ? t("stepDetail.job_closed", { note: freshnessNote(t, String(step.detail_params?.note ?? "")) })
     : step.detail_code === "job_not_eligible" ? t("stepDetail.job_not_eligible", { reason: exclusionReason(t, String(step.detail_params?.reason ?? "")) })
     : coded(t, "stepDetail", { code: step.detail_code, params: step.detail_params, text: step.detail });
   return detail ?? undefined;

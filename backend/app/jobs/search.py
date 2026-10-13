@@ -1,14 +1,19 @@
-"""Search every configured source at once, merge duplicates, cache identical searches for a short time."""
+"""Search every configured source at once, merge duplicates, cache identical searches for a short time.
+
+Each API request takes a unit of the provider's daily limit (`Budget`, see `usage.py`); a failed request is
+remembered for `failure_seconds`, so the same search does not hit a struggling or rate-limited API again at once.
+"""
 
 import asyncio
 import re
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
+from typing import Protocol
 
 from app.jobs.freshness import EXPIRED, RANK
 from app.jobs.models import Job, SourceError, SourceNotConfigured
-from app.jobs.sources import JobSource, record
+from app.jobs.sources import JobSource, SourceGone, record
 
 _COMPANY_SUFFIX = re.compile(r"\b(?:ltd|limited|plc|llp|inc|group|uk|recruitment)\b")
 _TITLE_NOISE = re.compile(r"\(.*?\)|\[.*?\]|\b(?:remote|hybrid|urgent|new)\b")
@@ -79,6 +84,16 @@ def merge(groups: Sequence[Sequence[Job]]) -> list[Job]:
     return sorted(merged, key=lambda j: j.posted.toordinal() if j.posted else 0, reverse=True)
 
 
+class Budget(Protocol):
+    limits: dict[str, int]
+
+    async def take(self, provider: str) -> bool: ...
+
+
+class QuotaUsedUp(SourceError):
+    """Today's request limit for this provider (set in backend/.env) is used up."""
+
+
 @dataclass
 class SearchOutcome:
     jobs: list[Job]
@@ -89,11 +104,31 @@ class SearchOutcome:
 
 
 class JobSearch:
-    def __init__(self, sources: Sequence[JobSource], cache_seconds: float = 600.0, clock: Callable[[], float] = time.monotonic) -> None:
+    def __init__(
+        self,
+        sources: Sequence[JobSource],
+        cache_seconds: float = 600.0,
+        clock: Callable[[], float] = time.monotonic,
+        budget: Budget | None = None,
+        failure_seconds: float = 120.0,
+    ) -> None:
         self.sources = list(sources)
         self.cache_seconds = cache_seconds
+        self.failure_seconds = failure_seconds
         self._clock = clock
+        self._budget = budget
         self._cache: dict[tuple[str, str, str, int, int], tuple[float, list[Job]]] = {}
+        self._failed: dict[tuple[str, ...], tuple[float, str]] = {}
+
+    async def _spend(self, source: JobSource) -> None:
+        """Takes one request of the provider's daily limit, or fails without calling the API."""
+        if self._budget is not None and not await self._budget.take(source.name):
+            limit = self._budget.limits.get(source.name, 0)
+            raise QuotaUsedUp(f"{source.label}: the daily limit of {limit} requests is used up; it resets at midnight UTC")
+
+    def _recent_failure(self, key: tuple[str, ...]) -> str | None:
+        failed = self._failed.get(key)
+        return failed[1] if failed is not None and failed[0] > self._clock() else None
 
     @property
     def configured(self) -> bool:
@@ -104,12 +139,17 @@ class JobSearch:
         cached = self._cache.get(key)
         if cached is not None and cached[0] > self._clock():
             return [_copy(j) for j in cached[1]]
+        if (failure := self._recent_failure(tuple(map(str, key)))) is not None:
+            raise SourceError(failure)
         try:
+            if source.configured:
+                await self._spend(source)
             jobs = await source.search(query, location, days, limit)
         except SourceNotConfigured:
             raise
         except SourceError as err:
             record(source.name, str(err))
+            self._failed[tuple(map(str, key))] = (self._clock() + self.failure_seconds, str(err))
             raise
         record(source.name, None)
         self._cache[key] = (self._clock() + self.cache_seconds, jobs)
@@ -139,10 +179,17 @@ class JobSearch:
             if source.name not in job.links:
                 continue
             listing = job if job.source == source.name else replace(job, source=source.name, source_id=job.ids.get(source.name, ""), url=job.links[source.name])
+            key = ("details", source.name, listing.source_id or listing.url)
             try:
+                if (failure := self._recent_failure(key)) is not None:
+                    raise SourceError(failure)
+                if getattr(source, "details_use_api", False):
+                    await self._spend(source)
                 text = await source.details(listing)
             except SourceError as err:
                 record(source.name, str(err))
+                if not isinstance(err, SourceGone):
+                    self._failed[key] = (self._clock() + self.failure_seconds, str(err))
                 error = str(err)
                 continue
             finally:

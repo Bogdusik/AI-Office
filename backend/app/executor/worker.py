@@ -101,6 +101,9 @@ class StageReport(Protocol):
     async def started(self) -> None:
         """The request has really been sent; waiting is over."""
 
+    async def unavailable(self, url: str) -> None:
+        """The model service at `url` cannot be reached; the worker waits for it and goes on by itself."""
+
     def partial(self, text: str) -> None:
         """Text produced so far; the executor saves it at its own pace."""
 

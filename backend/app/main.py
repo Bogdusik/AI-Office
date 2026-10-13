@@ -5,16 +5,19 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app.api.health import router as health_router
 from app.api.llms import router as llms_router
 from app.api.v1.router import api_router
 from app.core.config import get_settings
+from app.core.origin import OriginGuard
 from app.db.session import SessionLocal, engine
 from app.executor import Executor, FakeWorker, LlmSettings, LlmWorker, StageWorker, Timings
 from app.executor.job_tools import JobTools
 from app.executor.research import WebTools
 from app.jobs import AdzunaSource, JobSearch, ReedSource
+from app.jobs.usage import DailyBudget
 from app.web import FetchLimits, PageFetcher, SearxClient
 from app.services.errors import (
     ConflictError,
@@ -50,6 +53,8 @@ def build_worker() -> StageWorker:
         max_pages=settings.web_max_pages,
         tool_timeout=settings.web_tool_timeout_seconds,
         stage_timeout=settings.llm_research_timeout_seconds,
+        max_url_chars=settings.web_max_url_chars,
+        max_query_chars=settings.web_max_query_chars,
     )
     fetcher = web.fetcher
     jobs = JobTools(
@@ -59,11 +64,14 @@ def build_worker() -> StageWorker:
                 ReedSource(settings.reed_api_key, settings.jobs_timeout_seconds),
             ],
             cache_seconds=settings.jobs_cache_seconds,
+            budget=DailyBudget(SessionLocal, {"adzuna": settings.adzuna_daily_limit, "reed": settings.reed_daily_limit}),
+            failure_seconds=settings.jobs_failure_cache_seconds,
         ),
         max_calls=settings.jobs_max_calls,
         tool_timeout=settings.jobs_timeout_seconds * 2,
         max_results=settings.jobs_max_results,
         stage_timeout=settings.llm_research_timeout_seconds,
+        max_query_chars=settings.web_max_query_chars,
     )
     return LlmWorker(
         LlmSettings(
@@ -73,7 +81,7 @@ def build_worker() -> StageWorker:
             think=settings.ollama_think,
             temperature=settings.ollama_temperature,
             concurrency=settings.llm_concurrency,
-            stage_timeout=settings.llm_stage_timeout_seconds,
+            idle_timeout=settings.llm_idle_timeout_seconds,
             retries=settings.llm_retries,
             reserve_tokens=settings.llm_reserve_tokens,
             think_tokens=settings.llm_think_tokens,
@@ -113,8 +121,14 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         await engine.dispose()
 
 
-app = FastAPI(title="AI Office API", version="0.2.0", lifespan=lifespan)
+def docs_urls(api_docs: bool) -> dict[str, str | None]:
+    """The interactive docs pull their scripts from a CDN into the API's origin, so they are off unless asked for."""
+    return {"docs_url": "/docs", "redoc_url": "/redoc"} if api_docs else {"docs_url": None, "redoc_url": None}
 
+
+app = FastAPI(title="AI Office API", version="0.2.0", lifespan=lifespan, **docs_urls(get_settings().api_docs))
+
+app.add_middleware(OriginGuard, allowed_origins=get_settings().cors_origins)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=get_settings().cors_origins,
@@ -122,6 +136,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+# outermost: a page that re-pointed its own domain at 127.0.0.1 (DNS rebinding) is refused before anything else
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=get_settings().allowed_hosts)
 
 
 @app.exception_handler(DomainError)

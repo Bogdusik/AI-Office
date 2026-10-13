@@ -46,7 +46,7 @@ jobs:
       - run: pytest
 
   frontend:
-    name: Frontend (lint, layout checks, build)
+    name: Frontend (lint, layout, translation and interface checks, build)
     runs-on: ubuntu-latest
     env:
       NEXT_PUBLIC_API_URL: http://localhost:8000
@@ -64,4 +64,5 @@ jobs:
       - run: npm run lint
       - run: npm run check:layout
       - run: npm run check:i18n
+      - run: npm run check:ui
       - run: npm run build

@@ -4,7 +4,9 @@ Each hop connects to the IP that `resolve_public` checked (the Host header and T
 so certificates are verified as usual); a fresh client per hop means no cookies are ever carried over.
 """
 
+import asyncio
 import re
+import zlib
 from dataclasses import dataclass
 from urllib.parse import urljoin
 
@@ -15,7 +17,10 @@ from app.web.guard import BlockedUrl, Resolver, Target, parse_target, resolve_pu
 
 TEXT_TYPES = frozenset({"text/html", "application/xhtml+xml", "text/plain"})
 USER_AGENT = "AI-Office-research/1.0 (local, read-only)"
-TITLE_RE = re.compile(r"<title[^>]*>(.*?)</title>", re.IGNORECASE | re.DOTALL)
+TITLE_SCAN = 65_536
+"""The title is looked for in the head of the document only."""
+ENCODINGS = frozenset({"gzip", "deflate"})
+"""Accepted Content-Encoding values; one layer at most (stacked encodings expand a few bytes into gigabytes)."""
 
 
 class FetchError(Exception):
@@ -49,12 +54,20 @@ def cut(text: str, limit: int) -> tuple[str, bool]:
     return f"{text[:limit].rstrip()}\n[... page truncated, {len(text) - limit} more chars ...]", True
 
 
+def page_title(html: str) -> str:
+    """The `<title>` of a page by plain searching (linear time; a regex here was quadratic on unclosed tags)."""
+    head = html[:TITLE_SCAN]
+    low = head.lower()
+    start = low.find("<title")
+    opened = low.find(">", start) if start >= 0 else -1
+    end = low.find("</title", opened + 1) if opened >= 0 else -1
+    return " ".join(head[opened + 1 : end].split())[:300] if end > opened >= 0 else ""
+
+
 def html_to_text(html: str) -> tuple[str, str]:
     """Main text of a page (navigation, footers and ads dropped) and its title."""
-    match = TITLE_RE.search(html)
-    title = re.sub(r"\s+", " ", match.group(1)).strip() if match else ""
     text = trafilatura.extract(html, include_comments=False, include_tables=True, include_links=False) or ""
-    return text.strip(), title
+    return text.strip(), page_title(html)
 
 
 def _request_url(target: Target, ip: str) -> str:
@@ -89,7 +102,12 @@ class PageFetcher:
                 request = client.build_request(
                     "GET",
                     _request_url(target, ip),
-                    headers={"Host": target.host, "User-Agent": USER_AGENT, "Accept": "text/html, text/plain;q=0.9"},
+                    headers={
+                        "Host": target.host,
+                        "User-Agent": USER_AGENT,
+                        "Accept": "text/html, text/plain;q=0.9",
+                        "Accept-Encoding": "gzip, deflate",
+                    },
                     extensions={"sni_hostname": target.host} if target.scheme == "https" else {},
                 )
                 try:
@@ -116,17 +134,38 @@ class PageFetcher:
         kind = response.headers.get("content-type", "").split(";", 1)[0].strip().lower()
         if kind not in TEXT_TYPES:
             raise FetchError(f"not a text page ({kind or 'unknown type'})")
-        body = bytearray()
-        async for chunk in response.aiter_bytes():
-            body += chunk
-            if len(body) > self.limits.max_bytes:
-                break
-        raw = bytes(body[: self.limits.max_bytes]).decode(response.encoding or "utf-8", errors="replace")
+        raw = (await self._body(response)).decode(response.encoding or "utf-8", errors="replace")
         if kind == "text/plain":
             text, title = raw.strip(), ""
         else:
-            text, title = html_to_text(raw)
+            text, title = await asyncio.to_thread(html_to_text, raw)
         if not text:
             raise FetchError("no readable text on the page")
         text, truncated = cut(text, self.limits.page_chars)
         return Page(url=url, title=title or url, text=text, truncated=truncated)
+
+    async def _body(self, response: httpx.Response) -> bytes:
+        """At most `max_bytes` of the page, decompressed here with that limit (httpx would inflate a whole
+        network chunk first, and accepts any number of stacked encodings)."""
+        limit = self.limits.max_bytes
+        if response.is_stream_consumed:  # an already read response (test transports): httpx has decoded it
+            return response.content[:limit]
+        layers = [e.strip().lower() for e in response.headers.get("content-encoding", "").split(",") if e.strip()]
+        layers = [e for e in layers if e != "identity"]
+        if len(layers) > 1 or (layers and layers[0] not in ENCODINGS):
+            raise FetchError(f"unsupported compression ({', '.join(layers)})")
+        inflate = zlib.decompressobj(zlib.MAX_WBITS | 32) if layers else None
+        body = bytearray()
+        received = 0
+        async for chunk in response.aiter_raw():
+            received += len(chunk)
+            if inflate is None:
+                body += chunk
+            else:
+                try:
+                    body += inflate.decompress(chunk, limit - len(body) + 1)
+                except zlib.error as err:
+                    raise FetchError("the page could not be decompressed") from err
+            if len(body) > limit or received > limit:
+                break
+        return bytes(body[:limit])
