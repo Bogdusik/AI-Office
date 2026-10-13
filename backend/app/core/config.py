@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     cors_origins: list[str] = ["http://localhost:3000"]
     """Also the only origins allowed to send state-changing requests (`core/origin.py`)."""
     allowed_hosts: list[str] = ["localhost", "127.0.0.1"]
+    api_docs: bool = False
+    """/docs and /redoc (Swagger UI and ReDoc load their scripts from a CDN into the API's own origin)."""
     """Host header values the API answers; anything else (a DNS-rebinding page) gets 400."""
 
     executor_enabled: bool = True

@@ -204,7 +204,7 @@ if (Test-Port $BackendPort) {
 }
 $llm = try { Get-Json "http://localhost:$BackendPort/api/v1/llm/status" 10 } catch { [pscustomobject]@{ ok = $false; worker = $worker; message = $_.Exception.Message } }
 if ($worker -eq 'llm' -and -not $llm.ok) { Warn "The backend reports a model problem: $($llm.message)" }
-$Status['Backend'] = "http://localhost:$BackendPort - health ok, executor $($llm.worker), API docs /docs"
+$Status['Backend'] = "http://localhost:$BackendPort - health ok, executor $($llm.worker), API description /llms.txt"
 
 # ---------- frontend ----------
 Step "Frontend (port $FrontendPort)"

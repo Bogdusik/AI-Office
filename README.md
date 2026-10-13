@@ -266,7 +266,8 @@ docker exec ai-office-db rm /tmp/restore.dump
 - Agents stay in the office after their work: Send home in an agent's panel, Release all in Director's
   office → Team. Someone with a task in progress, queued or sent back for changes cannot go (the disabled
   button says why); tasks waiting for your review or paused do not keep anyone.
-- API docs: http://localhost:8000/docs, the whole API as Markdown for language models: http://localhost:8000/llms.txt.
+- The whole API as Markdown (also for language models): http://localhost:8000/llms.txt; OpenAPI: /openapi.json.
+  The interactive docs at /docs load Swagger UI from a CDN, so they are off unless `API_DOCS=true` in `backend/.env`.
   Health: http://localhost:8000/health.
 
 ## Tests and checks
