@@ -65,7 +65,7 @@ Floors: the reception and the director-office floor can't be deleted (409).
 - `backup.ps1` — `pg_dump -Fc` inside the container, checked with `pg_restore --list`, saved as `<db>-<yyyyMMdd-HHmmss>.dump` in `BACKUP_DIR` (default `%USERPROFILE%\Backups\AI-Office`, never inside the project), latest 14 kept; `-MirrorDir` / `BACKUP_MIRROR_DIR` also copies it there
 - `start.ps1` / `stop.ps1` — run / stop everything on Windows (Docker Desktop, containers, Ollama + model preload, backend without `--reload`, `next dev -H 127.0.0.1`) with a check per service; background output in `logs/`, pids in `.run/` (both git-ignored); `stop.ps1` only kills processes of this folder, `-All` also quits Ollama and Docker Desktop
 - `.github/workflows/ci.yml` — backend (Postgres service, migrations, demo seed, pytest) and frontend (lint, check:layout, check:i18n, check:ui, build)
-- `docs/screenshots/` — README images, taken on the demo profile only (never on real data)
+- `docs/screenshots/` — README images (`01-hero.gif` … `05-cover.png`, the same as in the HackerNoon article; the article's own folder `docs/article/` is not in git), taken on the demo profile only (never on real data)
 - `frontend/scripts/check-layout.mts` — `npm run check:layout`: parking/route/pick/walking-graph invariants of the pure layout, trip planner (exact duration, no overlaps, lift capacity, stability) + stage ribbon (no test runner)
 - `frontend/scripts/check-ui.mts` — `npm run check:ui`: images in Markdown become links, the CSP, the frame-rate limiter (no test runner)
 - `frontend/scripts/check-i18n.mts` — `npm run check:i18n`: fails on Cyrillic in `src/` or `scripts/` outside `lib/i18n/ru.ts`, on keys missing from either dictionary and on different `{placeholders}` of a key
