@@ -54,7 +54,8 @@ All images use the fictional demo profile (`python -m app.seed --demo`). The int
   turning back to the desk when a task comes while they are leaving.
 - **English interface** by default, Russian as the second language. The backend sends codes and parameters, the
   interface translates them, and `check:i18n` keeps the two dictionaries in step.
-- **Security and load audit, with fixes.** An independent review of the app as it runs on one PC; the fixes are listed
+- **Security and load audit, with fixes.** An independent review of the app as it runs on one PC (summary of all 33
+  findings and their status: [`docs/security-audit.md`](docs/security-audit.md)); the fixes are listed
   under [Security](#local-only-and-untrusted-text) and [Performance](#performance), the rest is in
   [`docs/backlog.md`](docs/backlog.md).
 - **Resilience.** The executor waits for PostgreSQL at start and after a dropped connection; an Ollama restart or
