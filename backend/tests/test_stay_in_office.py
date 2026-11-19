@@ -57,6 +57,9 @@ async def _in_office(client: AsyncClient, world: World, make_agent: Factory, mak
     agent = await make_agent(floor_id)
     task = await make_task(agent["id"])
     await until(world.is_task(task["id"], TaskStatus.NEEDS_REVIEW))
+    # The task reaches needs_review before the agent's loop sets waiting_review; approving in between
+    # sends the agent straight to idle, so wait for the agent too (tests below assert that sequence).
+    await until(world.is_agent(agent["id"], AgentStatus.WAITING_REVIEW))
     await client.post(f"/api/v1/tasks/{task['id']}/approve")
     await until(world.is_agent(agent["id"], AgentStatus.IDLE))
     return agent
