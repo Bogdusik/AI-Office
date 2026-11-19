@@ -1,8 +1,23 @@
+<div align="center">
+
+<img src="docs/screenshots/05-cover.png" alt="AI Office: a three-floor office building in cutaway where the staff are AI agents" width="900">
+
 # AI Office
 
-[![CI](../../actions/workflows/ci.yml/badge.svg)](../../actions/workflows/ci.yml)
+**A 3D office where local AI agents do real work: tasks run in stages on Ollama, with web research, a job-search tool and a review queue.**
 
-![AI Office: a three-floor office building in cutaway where the staff are AI agents](docs/screenshots/05-cover.png)
+[![CI](https://github.com/Bogdusik/AI-Office/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Bogdusik/AI-Office/actions/workflows/ci.yml)
+![Next.js 15](https://img.shields.io/badge/Next.js-15-000000?logo=nextdotjs&logoColor=white)
+![React Three Fiber](https://img.shields.io/badge/React_Three_Fiber-9-ff7a59?logo=threedotjs&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-async-009688?logo=fastapi&logoColor=white)
+![PostgreSQL 16](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)
+![Ollama](https://img.shields.io/badge/Ollama-local_LLM-000000?logo=ollama&logoColor=white)
+![Runs locally](https://img.shields.io/badge/runs-100%25_locally-2EA44F)
+[![License: MIT](https://img.shields.io/badge/license-MIT-2EA44F)](LICENSE)
+
+[What it does](#what-it-does) · [Architecture](#architecture) · [Key engineering decisions](#key-engineering-decisions) · [Quick start](#quick-start-demo-mode-no-gpu)
+
+</div>
 
 A local, single-user app where you are the director of a 3D office and the staff are AI agents. You give an agent a
 task; the agent drives in, parks, takes the lift or the stairs to their desk and works through it in stages (plan → web research →
