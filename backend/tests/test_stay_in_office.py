@@ -14,7 +14,7 @@ from app.executor import Executor, Timings
 from app.models import Agent, Task
 from app.models.enums import AgentStatus, TaskStage, TaskStatus, TripKind
 from tests.conftest import Factory
-from tests.test_executor import ScriptedWorker, World, agent_events, statuses, until, world  # noqa: F401 (fixtures)
+from tests.test_executor import ScriptedWorker, World, agent_events, statuses, statuses_until, until, world  # noqa: F401 (fixtures)
 
 
 @pytest.fixture
@@ -57,6 +57,9 @@ async def _in_office(client: AsyncClient, world: World, make_agent: Factory, mak
     agent = await make_agent(floor_id)
     task = await make_task(agent["id"])
     await until(world.is_task(task["id"], TaskStatus.NEEDS_REVIEW))
+    # The task reaches needs_review before the agent's loop sets waiting_review; approving in between
+    # sends the agent straight to idle, so wait for the agent too (tests below assert that sequence).
+    await until(world.is_agent(agent["id"], AgentStatus.WAITING_REVIEW))
     await client.post(f"/api/v1/tasks/{task['id']}/approve")
     await until(world.is_agent(agent["id"], AgentStatus.IDLE))
     return agent
@@ -80,7 +83,15 @@ async def test_the_agent_stays_after_the_last_task_and_takes_a_new_one_without_a
     again = await make_task(agent["id"])
     await until(world.is_task(again["id"], TaskStatus.NEEDS_REVIEW))
     await until(world.is_agent(agent["id"], AgentStatus.WAITING_REVIEW))
-    assert statuses(agent_events, agent["id"]) == ["arriving", "idle", "working", "waiting_review", "idle", "working", "waiting_review"]
+    assert await statuses_until(agent_events, agent["id"], AgentStatus.WAITING_REVIEW) == [
+        "arriving",
+        "idle",
+        "working",
+        "waiting_review",
+        "idle",
+        "working",
+        "waiting_review",
+    ]
 
 
 @pytest.mark.parametrize(
@@ -157,7 +168,7 @@ async def test_a_released_agent_drives_home(
 
     assert (await client.post(f"/api/v1/agents/{agent['id']}/release")).status_code == 200
     await until(world.is_agent(agent["id"], AgentStatus.OFF_SITE))
-    assert statuses(agent_events, agent["id"])[-3:] == ["idle", "leaving", "off_site"]
+    assert (await statuses_until(agent_events, agent["id"], AgentStatus.OFF_SITE))[-3:] == ["idle", "leaving", "off_site"]
     trip = _state_of((await client.get("/api/v1/state")).json(), agent["id"])["trip"]
     assert (trip["kind"], trip["origin_at"]) == (TripKind.DEPART, None)
 
@@ -191,7 +202,13 @@ async def test_a_task_before_the_car_moves_turns_the_agent_back_to_the_desk(
     assert clock() - begin >= (turned - left).total_seconds() + 0.4 - 0.2
     await until(world.is_task(task["id"], TaskStatus.NEEDS_REVIEW))
     await until(world.is_agent(agent["id"], AgentStatus.WAITING_REVIEW))
-    assert statuses(agent_events, agent["id"])[-5:] == ["leaving", "returning", "idle", "working", "waiting_review"]
+    assert (await statuses_until(agent_events, agent["id"], AgentStatus.WAITING_REVIEW))[-5:] == [
+        "leaving",
+        "returning",
+        "idle",
+        "working",
+        "waiting_review",
+    ]
 
 
 async def test_a_task_after_the_car_moved_brings_it_straight_back_from_the_map_edge(
@@ -222,7 +239,13 @@ async def test_a_task_after_the_car_moved_brings_it_straight_back_from_the_map_e
 
     await until(world.is_task(task["id"], TaskStatus.NEEDS_REVIEW))
     await until(world.is_agent(agent["id"], AgentStatus.WAITING_REVIEW))
-    assert statuses(agent_events, agent["id"])[-5:] == ["leaving", "arriving", "idle", "working", "waiting_review"]
+    assert (await statuses_until(agent_events, agent["id"], AgentStatus.WAITING_REVIEW))[-5:] == [
+        "leaving",
+        "arriving",
+        "idle",
+        "working",
+        "waiting_review",
+    ]
 
 
 async def test_release_all_sends_home_who_can_go_and_keeps_the_busy(

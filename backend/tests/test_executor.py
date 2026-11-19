@@ -146,6 +146,11 @@ def statuses(events: list[Event], agent_id: int) -> list[str]:
     return [e.data["status"] for e in events if e.type == "agent" and e.data["id"] == agent_id]
 
 
+async def statuses_until(events: list[Event], agent_id: int, last: AgentStatus) -> list[str]:
+    await until(lambda: statuses(events, agent_id)[-1:] == [last.value])
+    return statuses(events, agent_id)
+
+
 @pytest.fixture
 async def floor(make_floor: Factory) -> dict[str, Any]:
     return await make_floor()
@@ -183,8 +188,13 @@ async def test_full_cycle(
 
     assert (await client.post(f"/api/v1/tasks/{task['id']}/approve")).status_code == 200
     await until(world.is_agent(agent["id"], AgentStatus.IDLE))
-    await asyncio.sleep(0.3)
-    assert statuses(agent_events, agent["id"]) == ["arriving", "idle", "working", "waiting_review", "idle"]
+    assert await statuses_until(agent_events, agent["id"], AgentStatus.IDLE) == [
+        "arriving",
+        "idle",
+        "working",
+        "waiting_review",
+        "idle",
+    ]
 
 
 async def test_request_changes_produces_second_version(
@@ -584,7 +594,12 @@ async def test_new_task_brings_an_agent_back_after_leaving(
     again = await make_task(agent["id"])
     await until(world.is_task(again["id"], TaskStatus.NEEDS_REVIEW))
     await until(world.is_agent(agent["id"], AgentStatus.WAITING_REVIEW))
-    assert statuses(agent_events, agent["id"])[-4:] == ["arriving", "idle", "working", "waiting_review"]
+    assert (await statuses_until(agent_events, agent["id"], AgentStatus.WAITING_REVIEW))[-4:] == [
+        "arriving",
+        "idle",
+        "working",
+        "waiting_review",
+    ]
 
 
 async def test_fake_worker_streams_its_text() -> None:
